@@ -1,0 +1,386 @@
+/* User Detail — pixel-aligned with admin mockup */
+
+.ud-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* Size to content inside the shell flex scroller so the page can
+     scroll — min-height:0 would shrink/clip it instead. */
+  align-self: flex-start;
+  width: 100%;
+  flex: 0 0 auto;
+  min-height: auto;
+}
+
+.ud-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ud-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ft-text);
+  line-height: 1.25;
+}
+
+.ud-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border-strong);
+  background: var(--ft-surface);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.ud-back-btn:hover {
+  background: var(--ft-surface-hover);
+  border-color: var(--ft-border-strong);
+  color: var(--ft-text);
+}
+
+.ud-back-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.ud-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.ud-right {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  /* Match the user-detail card; overflow:hidden keeps this column from
+     stretching the grid row when the vehicle list is long */
+  height: 0;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.ud-right > .ud-card:not(.ud-card--vehicles) {
+  flex: 0 0 auto;
+}
+
+.ud-card {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(17, 24, 39, 0.04),
+    0 4px 16px rgba(17, 24, 39, 0.05);
+  padding: 24px 28px;
+  min-width: 0;
+}
+
+.ud-card-title {
+  margin: 0 0 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ft-text);
+}
+
+.ud-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 22px;
+}
+
+.ud-profile-head .ft-avatar {
+  width: 80px;
+  height: 80px;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.ud-profile-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.ud-profile-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ft-text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ud-profile-email {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--ft-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ud-profile-menu {
+  flex-shrink: 0;
+}
+
+.ud-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--ft-border);
+}
+
+.ud-section + .ud-section {
+  margin-top: 4px;
+}
+
+.ud-section-label {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ft-text);
+}
+
+.ud-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+}
+
+.ud-row + .ud-row {
+  margin-top: 8px;
+}
+
+.ud-row-label {
+  font-size: 13px;
+  color: var(--ft-text-muted);
+  font-weight: 400;
+}
+
+.ud-row-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ud-toggle-row .ft-switch:has(input:disabled) {
+  opacity: 1;
+  cursor: default;
+}
+
+.ud-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.ud-actions-btn:hover {
+  background: var(--ft-surface-hover);
+  color: var(--ft-text);
+}
+
+.ud-actions-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.ud-card--vehicles {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 8px;
+}
+
+.ud-card--vehicles .ud-card-title {
+  flex-shrink: 0;
+}
+
+.ud-vehicles-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 -28px -8px;
+  border-top: 1px solid var(--ft-border);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ud-vehicle-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 28px;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  color: inherit;
+  transition: background var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.ud-vehicle-item + .ud-vehicle-item {
+  border-top: 1px solid var(--ft-border);
+}
+
+.ud-vehicle-item:hover {
+  background: var(--ft-surface-hover);
+}
+
+.ud-vehicle-item:last-child {
+  border-radius: 0 0 16px 16px;
+}
+
+.ud-vehicle-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--ft-text-secondary);
+}
+
+.ud-vehicle-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ft-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ud-vehicle-menu {
+  flex-shrink: 0;
+}
+
+.ud-empty {
+  padding: 12px 0 4px;
+  font-size: 13px;
+  color: var(--ft-text-muted);
+}
+
+.ud-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  width: fit-content;
+  transition: color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.ud-back:hover {
+  color: var(--ft-primary);
+}
+
+@media (max-width: 860px) {
+  .ud-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ud-right {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .ud-card--vehicles {
+    flex: none;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .ud-vehicles-list {
+    flex: none;
+    overflow: visible;
+  }
+
+  .ud-title {
+    font-size: 20px;
+  }
+}
+
+/* Mobile shell floats bell + profile top-right — keep back on the left. */
+@media (max-width: 820px) {
+  .ud-header {
+    gap: 8px;
+    padding-right: 104px; /* clear floating bell + profile chips */
+    min-height: 40px;
+  }
+
+  .ud-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 20px;
+  }
+
+  .ud-back-btn {
+    order: -1;
+    margin-left: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ud-actions-btn,
+  .ud-vehicle-item,
+  .ud-back,
+  .ud-back-btn {
+    transition: none !important;
+  }
+}

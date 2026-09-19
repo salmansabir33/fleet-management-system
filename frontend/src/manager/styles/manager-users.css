@@ -1,0 +1,281 @@
+/* Manager Users (picker) — card grid aligned with the manager mockup */
+
+.ft-shell--manager:has(.mu-users-page) .ft-shell-page-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.mu-users-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.mu-users-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mu-users-kicker {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ft-text);
+  letter-spacing: -0.01em;
+}
+
+.mu-users-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.mu-users-search {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  height: 40px;
+}
+
+.mu-users-filter-mobile {
+  display: none;
+}
+
+.mu-users-filter-desktop {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.mu-users-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border-strong);
+  background: var(--ft-surface);
+  color: var(--ft-text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.mu-users-filter-btn:hover {
+  background: var(--ft-surface-hover);
+  border-color: color-mix(in srgb, var(--ft-primary) 35%, var(--ft-border-strong));
+  color: var(--ft-text);
+  box-shadow: var(--ft-shadow-xs);
+}
+
+.mu-users-filter-btn:focus-visible,
+.mu-users-filter-btn[aria-expanded="true"] {
+  outline: none;
+  border-color: color-mix(in srgb, var(--ft-primary) 55%, var(--ft-border));
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.mu-users-filter-icon-btn {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.mu-users-filter-icon-btn:hover,
+.mu-users-filter-icon-btn[aria-expanded="true"] {
+  background: var(--ft-surface-hover);
+  color: var(--ft-text);
+}
+
+.mu-users-filter-icon-btn--active {
+  color: var(--ft-primary);
+  background: color-mix(in srgb, var(--ft-primary-soft) 70%, transparent);
+}
+
+.mu-users-filter-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.mu-users-filter-menu {
+  min-width: 168px;
+  padding: 6px;
+}
+
+.mu-users-filter-item {
+  width: 100%;
+  justify-content: flex-start;
+  font-weight: 600;
+}
+
+.mu-users-filter-item--active {
+  background: color-mix(in srgb, var(--ft-primary) 12%, var(--ft-surface));
+  color: var(--ft-primary);
+}
+
+.mu-users-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.mu-users-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  min-width: 0;
+}
+
+.mu-users-card:hover,
+.mu-users-card:focus-visible {
+  border-color: color-mix(in srgb, var(--ft-primary) 45%, var(--ft-border));
+  background: color-mix(in srgb, var(--ft-primary) 6%, var(--ft-surface));
+}
+
+.mu-users-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mu-users-card__identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.mu-users-card__name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ft-text);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mu-users-card__status {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  line-height: 1.3;
+}
+
+.mu-users-card__status--online {
+  color: var(--ft-status-moving, #16a34a);
+}
+
+.mu-users-card__status--offline {
+  color: var(--ft-text-muted);
+}
+
+.mu-users-card__menu {
+  flex-shrink: 0;
+  margin: -4px -4px 0 0;
+}
+
+.mu-users-card__hero {
+  width: 100%;
+  height: 148px;
+  min-height: 148px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.mu-users-card__hero .ft-vehicle-art,
+.mu-users-card__hero .ft-vehicle-art--card {
+  height: 100%;
+  min-height: 148px;
+  border: none;
+}
+
+.mu-users-card__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mu-users-card__vehicle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ft-text);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mu-users-card__meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+}
+
+.mu-users-card__select {
+  width: 100%;
+}
+
+.mu-users-card:hover .mu-users-card__select.ft-btn--secondary,
+.mu-users-card:focus-visible .mu-users-card__select.ft-btn--secondary {
+  background: var(--ft-primary);
+  color: var(--ft-surface);
+  border-color: var(--ft-primary);
+}
+
+@media (max-width: 700px) {
+  .mu-users-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .mu-users-search {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+    padding-right: 8px;
+  }
+
+  .mu-users-filter-mobile {
+    display: inline-flex;
+  }
+
+  .mu-users-filter-desktop {
+    display: none;
+  }
+
+  .mu-users-grid {
+    grid-template-columns: 1fr;
+  }
+}

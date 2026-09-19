@@ -1,0 +1,135 @@
+.ft-geofences-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ft-geofences-toolbar__search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ft-geofences-toolbar__add {
+  flex-shrink: 0;
+}
+
+.ft-geofences-map-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  flex-direction: column;
+  background: var(--ft-surface);
+}
+
+.ft-geofences-map-overlay__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--ft-border);
+  flex-shrink: 0;
+  background: var(--ft-surface);
+}
+
+.ft-geofences-map-overlay__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ft-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ft-geofences-map-overlay__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--ft-border);
+  border-radius: 999px;
+  background: var(--ft-background);
+  color: var(--ft-text);
+  cursor: pointer;
+}
+
+.ft-geofences-map-overlay__close:hover {
+  background: var(--ft-surface);
+}
+
+.ft-geofences-map-overlay__map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ft-geofences-map-overlay__map .ft-split-map,
+.ft-geofences-map-overlay__map .leaflet-container {
+  min-height: 0;
+  height: 100%;
+}
+
+@media (max-width: 900px) {
+  .ft-shell--manager .ft-shell-content:has(.ft-geofences-page),
+  .ft-shell--admin .ft-shell-content:has(.ft-geofences-page) {
+    overflow: hidden;
+  }
+
+  .ft-geofences-toolbar__search {
+    flex: 2 1 0;
+  }
+
+  .ft-geofences-toolbar__add {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .ft-geofences-page {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .ft-geofences-page .ft-split-layout {
+    grid-template-columns: 1fr !important;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .ft-geofences-page .ft-geofences-desktop-map {
+    display: none !important;
+  }
+
+  .ft-geofences-page .ft-geofences-list-panel {
+    flex: 1 1 auto;
+    height: 100%;
+    max-height: 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ft-geofences-page .ft-geofences-list-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+}

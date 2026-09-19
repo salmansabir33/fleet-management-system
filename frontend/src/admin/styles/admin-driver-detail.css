@@ -1,0 +1,898 @@
+/* Driver detail + assignment history — pixel-aligned with admin mockup */
+
+.dd-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* Size to content inside the shell flex scroller so sticky range
+     stays pinned for the full page, not just one viewport. */
+  align-self: flex-start;
+  width: 100%;
+  flex: 0 0 auto;
+  min-height: auto;
+}
+
+.dd-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dd-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ft-text);
+  line-height: 1.25;
+}
+
+.dd-range-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  align-self: flex-start;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--ft-background);
+  box-shadow: 0 1px 0 var(--ft-border);
+}
+
+.dd-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--ft-border);
+  background: var(--ft-surface);
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.dd-range::-webkit-scrollbar {
+  display: none;
+}
+
+.dd-range-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.dd-range-btn:hover {
+  color: var(--ft-text);
+  background: var(--ft-surface-hover);
+}
+
+.dd-range-btn--active {
+  color: var(--ft-text);
+  background: var(--ft-surface-hover);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
+}
+
+.dd-range-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.dd-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border-strong);
+  background: var(--ft-surface);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.dd-back-btn:hover {
+  background: var(--ft-surface-hover);
+  color: var(--ft-text);
+}
+
+.dd-back-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.dd-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.95fr) minmax(360px, 1.15fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.dd-card {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(17, 24, 39, 0.04),
+    0 4px 16px rgba(17, 24, 39, 0.05);
+  padding: 24px 28px;
+  min-width: 0;
+}
+
+.dd-card-title {
+  margin: 0 0 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ft-text);
+}
+
+.dd-card--overview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dd-card--overview.dd-card--loading {
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.dd-overview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.dd-overview-head .dd-card-title {
+  margin: 0;
+}
+
+.dd-overview-range {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  white-space: nowrap;
+}
+
+.dd-metrics-section + .dd-metrics-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ft-border);
+}
+
+.dd-metrics-heading {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ft-text-muted);
+}
+
+.dd-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dd-metrics--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dd-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--ft-border);
+  background: var(--ft-surface-hover, rgba(17, 24, 39, 0.02));
+}
+
+.dd-metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dd-metric-value {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-metric-hint {
+  font-size: 11px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-metric--quiet {
+  opacity: 0.72;
+  filter: saturate(0.55);
+}
+
+.dd-metric--trips {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.28);
+}
+.dd-metric--trips .dd-metric-label,
+.dd-metric--trips .dd-metric-hint { color: #1d4ed8; }
+.dd-metric--trips .dd-metric-value { color: #1e3a8a; }
+
+.dd-metric--distance {
+  background: rgba(79, 70, 229, 0.1);
+  border-color: rgba(79, 70, 229, 0.28);
+}
+.dd-metric--distance .dd-metric-label,
+.dd-metric--distance .dd-metric-hint { color: #4338ca; }
+.dd-metric--distance .dd-metric-value { color: #312e81; }
+
+.dd-metric--duration {
+  background: rgba(8, 145, 178, 0.1);
+  border-color: rgba(8, 145, 178, 0.28);
+}
+.dd-metric--duration .dd-metric-label,
+.dd-metric--duration .dd-metric-hint { color: #0e7490; }
+.dd-metric--duration .dd-metric-value { color: #155e75; }
+
+.dd-metric--fuel {
+  background: rgba(13, 148, 136, 0.1);
+  border-color: rgba(13, 148, 136, 0.28);
+}
+.dd-metric--fuel .dd-metric-label,
+.dd-metric--fuel .dd-metric-hint { color: #0f766e; }
+.dd-metric--fuel .dd-metric-value { color: #115e59; }
+
+.dd-metric--fuel-avg {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.28);
+}
+.dd-metric--fuel-avg .dd-metric-label,
+.dd-metric--fuel-avg .dd-metric-hint { color: #15803d; }
+.dd-metric--fuel-avg .dd-metric-value { color: #14532d; }
+
+.dd-metric--fuel-cost {
+  background: rgba(217, 119, 6, 0.1);
+  border-color: rgba(217, 119, 6, 0.28);
+}
+.dd-metric--fuel-cost .dd-metric-label,
+.dd-metric--fuel-cost .dd-metric-hint { color: #b45309; }
+.dd-metric--fuel-cost .dd-metric-value { color: #92400e; }
+
+.dd-metric--toll {
+  background: rgba(234, 88, 12, 0.1);
+  border-color: rgba(234, 88, 12, 0.28);
+}
+.dd-metric--toll .dd-metric-label,
+.dd-metric--toll .dd-metric-hint { color: #c2410c; }
+.dd-metric--toll .dd-metric-value { color: #9a3412; }
+
+.dd-metric--challan {
+  background: rgba(225, 29, 72, 0.1);
+  border-color: rgba(225, 29, 72, 0.28);
+}
+.dd-metric--challan .dd-metric-label,
+.dd-metric--challan .dd-metric-hint { color: #be123c; }
+.dd-metric--challan .dd-metric-value { color: #9f1239; }
+
+.dd-metric--total {
+  background: rgba(124, 58, 237, 0.1);
+  border-color: rgba(124, 58, 237, 0.28);
+}
+.dd-metric--total .dd-metric-label,
+.dd-metric--total .dd-metric-hint { color: #6d28d9; }
+.dd-metric--total .dd-metric-value { color: #5b21b6; }
+
+.dd-metric--harsh-brake {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.28);
+}
+.dd-metric--harsh-brake .dd-metric-label,
+.dd-metric--harsh-brake .dd-metric-hint { color: #b91c1c; }
+.dd-metric--harsh-brake .dd-metric-value { color: #991b1b; }
+
+.dd-metric--harsh-accel {
+  background: rgba(234, 88, 12, 0.1);
+  border-color: rgba(234, 88, 12, 0.28);
+}
+.dd-metric--harsh-accel .dd-metric-label,
+.dd-metric--harsh-accel .dd-metric-hint { color: #c2410c; }
+.dd-metric--harsh-accel .dd-metric-value { color: #9a3412; }
+
+.dd-metric--overspeed {
+  background: rgba(202, 138, 4, 0.12);
+  border-color: rgba(202, 138, 4, 0.3);
+}
+.dd-metric--overspeed .dd-metric-label,
+.dd-metric--overspeed .dd-metric-hint { color: #a16207; }
+.dd-metric--overspeed .dd-metric-value { color: #854d0e; }
+
+.dd-metric--idle {
+  background: rgba(71, 85, 105, 0.1);
+  border-color: rgba(71, 85, 105, 0.28);
+}
+.dd-metric--idle .dd-metric-label,
+.dd-metric--idle .dd-metric-hint { color: #475569; }
+.dd-metric--idle .dd-metric-value { color: #334155; }
+
+.dd-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dd-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dd-history-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ft-text);
+}
+
+.dd-history-meta {
+  font-size: 13px;
+  color: var(--ft-text-muted);
+}
+
+.dd-card--history {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.dd-card--history .dd-empty {
+  padding: 20px 24px;
+  margin: 0;
+}
+
+/* ~header + 9 trip rows; scroll when content grows */
+.dd-history-table-wrap {
+  width: 100%;
+  min-height: 520px;
+  max-height: min(560px, calc(100vh - 220px));
+  overflow: auto;
+}
+
+.dd-history-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Mobile card list — hidden on desktop */
+.dd-history-cards {
+  display: none;
+}
+
+.dd-history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--ft-primary) 22%, var(--ft-border));
+  border-radius: 12px;
+  background: var(--ft-surface);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--ft-primary) 12%, transparent),
+    0 6px 16px color-mix(in srgb, var(--ft-primary) 14%, transparent),
+    0 14px 28px rgba(17, 24, 39, 0.06);
+}
+
+.dd-history-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dd-history-card-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.dd-history-card-num {
+  flex-shrink: 0;
+  min-width: 28px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ft-text-muted);
+  line-height: 1.4;
+  padding-top: 2px;
+}
+
+.dd-history-card-vehicle {
+  min-width: 0;
+  text-align: left;
+}
+
+.dd-history-card-empty-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--ft-surface-hover);
+  color: var(--ft-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dd-history-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dd-history-card-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dd-history-card-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 8px;
+}
+
+.dd-history-card-group--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.dd-history-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dd-history-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ft-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-history-card-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-history-card-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 100%;
+  margin: -4px 0 -6px;
+  padding: 4px 0 0;
+  border: none;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  min-height: 32px;
+  border-radius: 8px;
+  transition: color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.dd-history-card-expand:hover,
+.dd-history-card-expand:focus-visible {
+  color: var(--ft-primary);
+}
+
+.dd-history-card-expand:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.dd-history-card-expand svg {
+  transition: transform var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.dd-history-card-expand.is-open svg {
+  transform: rotate(180deg);
+}
+
+.dd-history-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ft-surface);
+}
+
+.dd-card--history .dd-history-table thead th,
+.dd-card--history .dd-history-table tbody td {
+  padding: 12px 16px;
+  vertical-align: middle;
+}
+
+.dd-vehicle-link {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dd-vehicle-link:hover .ad-stack-primary {
+  color: var(--ft-primary);
+}
+
+.dd-vehicle-link:focus-visible {
+  outline: none;
+  border-radius: 6px;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.dd-empty-trips {
+  font-size: 13px;
+  color: var(--ft-text-muted);
+  font-style: italic;
+}
+
+.dd-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 22px;
+}
+
+.dd-profile-head .ft-avatar {
+  width: 80px;
+  height: 80px;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.dd-profile-meta {
+  min-width: 0;
+}
+
+.dd-profile-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ft-text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-profile-sub {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--ft-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-current-assignment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  padding: 0 8px;
+}
+
+.dd-current-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ft-text-muted);
+}
+
+.dd-current-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ft-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.dd-current-meta {
+  font-size: 12px;
+  color: var(--ft-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.dd-profile-menu {
+  flex-shrink: 0;
+}
+
+.dd-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--ft-border);
+}
+
+.dd-section + .dd-section {
+  margin-top: 4px;
+}
+
+.dd-section-label {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ft-text);
+}
+
+.dd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+}
+
+.dd-row + .dd-row {
+  margin-top: 8px;
+}
+
+.dd-row-label {
+  font-size: 13px;
+  color: var(--ft-text-muted);
+  font-weight: 400;
+}
+
+.dd-row-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-license-pic {
+  width: 64px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--ft-border);
+}
+
+.dd-empty {
+  padding: 8px 0 4px;
+  font-size: 13px;
+  color: var(--ft-text-muted);
+}
+
+.dd-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.dd-actions-btn:hover {
+  background: var(--ft-surface-hover);
+  color: var(--ft-text);
+}
+
+.dd-actions-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.dd-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  width: fit-content;
+  transition: color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.dd-back:hover {
+  color: var(--ft-primary);
+}
+
+@media (max-width: 1100px) {
+  .dd-current-assignment {
+    align-items: flex-start;
+    text-align: left;
+    padding: 0;
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .dd-profile-head {
+    flex-wrap: wrap;
+  }
+
+  .dd-profile-menu {
+    margin-left: auto;
+  }
+
+  .dd-metrics--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .dd-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dd-title {
+    font-size: 20px;
+  }
+
+  /* Flush sticky range to topbar / content — cancel shell padding + page gap */
+  .dd-range-bar {
+    top: -16px;
+    margin-top: -18px;
+    margin-bottom: -10px;
+    margin-left: -16px;
+    margin-right: -16px;
+    width: calc(100% + 32px);
+    padding: 8px 16px;
+  }
+
+  .dd-range {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .dd-card {
+    padding: 16px;
+  }
+
+  .dd-card--history {
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .dd-history-table-wrap {
+    display: none;
+  }
+
+  .dd-history-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 12px;
+    max-height: min(70vh, 560px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Keep 3-up / 2x2 on tablet+phone — do not collapse to a single column */
+  .dd-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dd-metrics--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .dd-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .dd-metrics--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .dd-metric {
+    padding: 10px 8px;
+  }
+
+  .dd-metric-label {
+    font-size: 10px;
+  }
+
+  .dd-metric-value {
+    font-size: 13px;
+  }
+
+  .dd-metric-hint {
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dd-actions-btn,
+  .dd-back,
+  .dd-back-btn,
+  .dd-range-btn {
+    transition: none !important;
+  }
+}

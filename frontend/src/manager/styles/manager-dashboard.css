@@ -1,0 +1,235 @@
+/* Manager dashboard — pixel-aligned with the manager mockup */
+
+.ft-manager-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ft-shell--manager:has(.ft-manager-dashboard) .ft-shell-page-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.ft-md-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 14px;
+  align-items: start;
+}
+
+.ft-md-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.ft-md-kpi {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.05);
+  padding: 14px 16px 12px;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ft-md-kpi--interactive {
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.ft-md-kpi--interactive:hover,
+.ft-md-kpi--interactive:focus-visible {
+  border-color: var(--ft-primary-border);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ft-primary) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.ft-md-kpi--interactive:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ft-focus-ring) 32%, transparent),
+    0 4px 12px color-mix(in srgb, var(--ft-primary) 10%, transparent);
+}
+
+.ft-md-kpi__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ft-md-kpi__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.ft-md-kpi__info {
+  display: inline-flex;
+  color: var(--ft-text-disabled);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ft-md-kpi__value {
+  margin-top: 10px;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ft-text);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  flex: 1;
+}
+
+.ft-md-kpi__track {
+  margin-top: 14px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ft-background);
+  overflow: hidden;
+}
+
+.ft-md-kpi__bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  min-width: 0;
+  transition: width 0.2s ease;
+}
+
+.ft-md-status {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  border-radius: 16px;
+}
+
+.ft-md-status > :last-child {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ft-md-status .ft-donut-legend-item {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ft-md-chart {
+  border-radius: 16px;
+  padding: 20px 22px 12px;
+}
+
+.ft-md-chart h3 {
+  font-size: 16px;
+}
+
+.ft-md-insights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 16px;
+}
+
+.ft-md-insight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--ft-background);
+  border: 1px solid var(--ft-border);
+}
+
+.ft-md-insight__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ft-md-insight__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  white-space: nowrap;
+}
+
+.ft-md-insight__value {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ft-text);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+@media (max-width: 960px) {
+  .ft-md-top {
+    grid-template-columns: 1fr;
+  }
+
+  .ft-md-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ft-md-status {
+    min-height: 220px;
+  }
+}
+
+@media (max-width: 560px) {
+  .ft-md-kpis {
+    /* Keep 3×2 grid on phones instead of full-width stacked rows */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ft-md-kpi {
+    min-height: 88px;
+    padding: 10px 10px 8px;
+    border-radius: 12px;
+  }
+
+  .ft-md-kpi__label {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .ft-md-kpi__info svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .ft-md-kpi__value {
+    margin-top: 6px;
+    font-size: 18px;
+  }
+
+  .ft-md-kpi__track {
+    margin-top: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ft-md-kpi--interactive,
+  .ft-md-kpi__bar {
+    transition: none;
+  }
+
+  .ft-md-kpi--interactive:hover {
+    transform: none;
+  }
+}

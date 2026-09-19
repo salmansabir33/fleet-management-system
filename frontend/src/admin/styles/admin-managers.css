@@ -1,0 +1,471 @@
+/* Admin Managers — same panel language as Admin Trips */
+
+.amg-page .at-trips-panel {
+  overflow: hidden;
+}
+
+.amg-list-section {
+  overflow: hidden;
+}
+
+.amg-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--ft-primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.amg-add-btn:hover {
+  background: var(--ft-primary-hover);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ft-primary) 35%, transparent);
+}
+
+.amg-add-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.amg-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.amg-name .ft-avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.amg-name .ft-avatar img {
+  object-fit: cover;
+}
+
+.amg-name-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.amg-name-title {
+  font-weight: 600;
+  color: var(--ft-text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amg-name-sub {
+  font-size: 11px;
+  color: var(--ft-text-muted);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amg-vehicles {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ft-primary) 12%, transparent);
+  color: var(--ft-primary);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.at-trips-table tbody tr.at-trips-row--selected {
+  background: color-mix(in srgb, var(--ft-primary-soft) 72%, #ffffff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ft-primary) 55%, transparent);
+}
+
+.amg-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.amg-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.amg-detail-head .ft-avatar {
+  flex-shrink: 0;
+}
+
+.amg-detail-identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.amg-detail-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ft-text);
+  letter-spacing: -0.01em;
+}
+
+.amg-detail-user {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ft-text-muted);
+}
+
+.amg-detail-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ft-text-muted);
+}
+
+.amg-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--ft-border);
+}
+
+.amg-detail-section-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ft-text);
+}
+
+.amg-detail-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ft-text-disabled);
+}
+
+.amg-user-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.amg-user-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border);
+  background: var(--ft-background);
+}
+
+.amg-user-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.amg-user-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text);
+}
+
+.amg-user-card-meta {
+  font-size: 11px;
+  color: var(--ft-text-muted);
+}
+
+.amg-unassign-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.amg-unassign-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ft-semantic-danger) 12%, transparent);
+  color: var(--ft-semantic-danger);
+}
+
+.amg-unassign-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.amg-vehicle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.amg-vehicle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border);
+}
+
+.amg-vehicle-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--ft-primary-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--ft-primary);
+}
+
+.amg-vehicle-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text);
+}
+
+.amg-vehicle-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ft-text-muted);
+}
+
+/* Manager cards — used on desktop and mobile */
+.amg-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 8px 24px 24px;
+  flex: 1;
+  min-height: 0;
+  align-content: start;
+  overflow: auto;
+}
+
+.amg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ft-border);
+  border-radius: 12px;
+  background: var(--ft-surface);
+  cursor: pointer;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing),
+    transform var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.amg-card:hover,
+.amg-card:focus-visible {
+  background: color-mix(in srgb, var(--ft-primary-soft) 72%, #ffffff);
+  border-color: color-mix(in srgb, var(--ft-primary) 55%, var(--ft-border));
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--ft-primary) 12%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--ft-primary) 55%, transparent);
+  transform: translateY(-1px);
+}
+
+.amg-card:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.amg-card--selected {
+  background: color-mix(in srgb, var(--ft-primary-soft) 72%, #ffffff);
+  border-color: color-mix(in srgb, var(--ft-primary) 55%, var(--ft-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ft-primary) 55%, transparent);
+}
+
+.amg-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.amg-card-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.amg-card-num {
+  flex-shrink: 0;
+  min-width: 28px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ft-text-muted);
+}
+
+.amg-card-identity .ft-avatar {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.amg-card-identity .ft-avatar img {
+  object-fit: cover;
+}
+
+.amg-card-name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.amg-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ft-text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amg-card-user {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ft-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amg-vehicles--card {
+  flex-shrink: 0;
+  gap: 5px;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.amg-card-actions {
+  display: flex;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px solid var(--ft-border);
+}
+
+.amg-card-details-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--ft-primary) 35%, var(--ft-border));
+  background: color-mix(in srgb, var(--ft-primary) 8%, var(--ft-surface));
+  color: var(--ft-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.amg-card-details-btn:hover {
+  background: color-mix(in srgb, var(--ft-primary) 14%, var(--ft-surface));
+  border-color: color-mix(in srgb, var(--ft-primary) 55%, var(--ft-border));
+}
+
+.amg-card-details-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+@media (max-width: 1100px) {
+  .amg-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .amg-page .at-trips-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .amg-page .at-trips-search {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Keep Add button visible (trips CSS hides .at-trips-toolbar-actions) */
+  .amg-page .amg-toolbar-actions {
+    display: flex;
+    width: 100%;
+  }
+
+  .amg-page .amg-add-btn {
+    flex: 1;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .amg-cards {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 4px 16px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amg-add-btn,
+  .amg-card,
+  .amg-card-details-btn {
+    transition: none !important;
+  }
+
+  .amg-card:hover,
+  .amg-card:focus-visible {
+    transform: none;
+  }
+}

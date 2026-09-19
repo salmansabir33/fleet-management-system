@@ -1,0 +1,69 @@
+.upf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upf-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.upf-avatar {
+  width: 56px !important;
+  height: 56px !important;
+  font-size: 18px !important;
+}
+
+.upf-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.upf-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.upf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border-strong);
+  background: var(--ft-surface);
+  color: var(--ft-text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.upf-btn:hover {
+  background: var(--ft-surface-hover);
+  color: var(--ft-text);
+}
+
+.upf-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.upf-hint {
+  font-size: 12px;
+  color: var(--ft-text-muted);
+}

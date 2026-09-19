@@ -1,0 +1,77 @@
+/* Admin Maintenance — same panel language as Admin Trips */
+
+.am-vehicles-page .at-trips-panel {
+  overflow: hidden;
+}
+
+.am-vehicles-page .at-trips-table-section {
+  overflow: hidden;
+}
+
+.am-vehicles-page .at-trips-table-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.am-vehicles-page .at-trips-cards {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 820px) {
+  .am-vehicles-page .at-trips-panel,
+  .am-vehicles-page .at-trips-table-section {
+    overflow: visible;
+  }
+
+  .am-vehicles-page .at-trips-table-wrap,
+  .am-vehicles-page .at-trips-cards {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+}
+
+.am-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--ft-primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.am-add-btn:hover {
+  background: var(--ft-primary-hover);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ft-primary) 35%, transparent);
+}
+
+.am-add-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-add-btn {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,673 @@
+/* All Vehicles — pixel-aligned with fleet admin mockup */
+
+.av-vehicles-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.av-vehicles-panel {
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px rgba(17, 24, 39, 0.04),
+    0 8px 24px rgba(17, 24, 39, 0.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.av-vehicles-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+}
+
+.av-vehicles-search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border);
+  background: var(--ft-surface);
+  transition:
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-search:focus-within {
+  border-color: color-mix(in srgb, var(--ft-primary) 55%, var(--ft-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ft-primary) 14%, transparent);
+}
+
+.av-vehicles-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ft-text);
+  height: 100%;
+}
+
+.av-vehicles-search input::placeholder {
+  color: var(--ft-text-disabled);
+}
+
+.av-vehicles-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.av-vehicles-filters-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ft-border-strong);
+  background: var(--ft-surface);
+  color: var(--ft-text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-filters-btn:hover {
+  background: var(--ft-surface-hover);
+  border-color: color-mix(in srgb, var(--ft-primary) 35%, var(--ft-border-strong));
+  color: var(--ft-text);
+  box-shadow: var(--ft-shadow-xs);
+}
+
+.av-vehicles-filters-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.av-vehicles-new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--ft-primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing),
+    transform var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-new-btn:hover:not(:disabled) {
+  background: var(--ft-primary-hover);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ft-primary) 35%, transparent);
+  transform: translateY(-1px);
+}
+
+.av-vehicles-new-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.av-vehicles-filters-panel {
+  display: none;
+  padding: 0 24px 16px;
+  border-bottom: 1px solid var(--ft-border);
+  flex-shrink: 0;
+}
+
+.av-vehicles-filters-panel--open {
+  display: block;
+}
+
+.av-vehicles-table-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.av-vehicles-table-wrap {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.av-vehicles-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.av-vehicles-table thead th {
+  padding: 12px 24px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ft-text-secondary);
+  background: var(--ft-surface);
+  border-bottom: 1px solid var(--ft-border);
+  white-space: nowrap;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.av-vehicles-table thead th.av-vehicles-th--sortable {
+  cursor: pointer;
+}
+
+.av-vehicles-table thead th.av-vehicles-th--sortable:hover {
+  color: var(--ft-text);
+}
+
+.av-vehicles-th-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.av-vehicles-sort-icon {
+  color: var(--ft-primary);
+  flex-shrink: 0;
+}
+
+.av-vehicles-table tbody td {
+  padding: 16px 24px;
+  color: var(--ft-text);
+  border-bottom: 1px solid var(--ft-border);
+  vertical-align: middle;
+}
+
+.av-vehicles-table tbody tr.av-vehicles-row {
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-table tbody tr.av-vehicles-row--clickable {
+  cursor: pointer;
+}
+
+.av-vehicles-table tbody tr.av-vehicles-row:hover {
+  background: color-mix(in srgb, var(--ft-primary-soft) 72%, #ffffff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ft-primary) 55%, transparent);
+}
+
+.av-vehicles-cell-id {
+  font-weight: 600;
+  color: var(--ft-text);
+}
+
+.av-vehicles-cell-muted {
+  color: var(--ft-text-secondary);
+}
+
+.av-vehicles-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.av-vehicles-user .ft-avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+.av-vehicles-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ft-text-secondary);
+  font-size: 13px;
+}
+
+.av-vehicles-location svg {
+  color: var(--ft-text-muted);
+  flex-shrink: 0;
+}
+
+.av-vehicles-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.av-vehicles-status--online {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.av-vehicles-status--online .av-vehicles-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #059669;
+  flex-shrink: 0;
+}
+
+.av-vehicles-status--moving {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.av-vehicles-status--moving .av-vehicles-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+
+.av-vehicles-status--offline {
+  background: #1f2937;
+  color: #f9fafb;
+  padding: 4px 10px;
+}
+
+.av-vehicles-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-actions-btn:hover {
+  background: color-mix(in srgb, var(--ft-primary-soft) 65%, transparent);
+  color: var(--ft-primary);
+}
+
+.av-vehicles-actions-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.av-vehicles-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.av-vehicles-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ft-border);
+  background: var(--ft-surface);
+  color: var(--ft-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    color var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-action-btn:hover {
+  background: var(--ft-surface-hover);
+  border-color: var(--ft-border-strong);
+  color: var(--ft-text);
+}
+
+.av-vehicles-action-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.av-vehicles-action-btn--edit:hover {
+  border-color: color-mix(in srgb, var(--ft-primary) 45%, var(--ft-border));
+  color: var(--ft-primary);
+  background: color-mix(in srgb, var(--ft-primary-soft) 55%, var(--ft-surface));
+}
+
+.av-vehicles-action-btn--delete:hover {
+  border-color: color-mix(in srgb, var(--ft-semantic-danger) 45%, var(--ft-border));
+  color: var(--ft-semantic-danger);
+  background: color-mix(in srgb, var(--ft-semantic-danger) 10%, var(--ft-surface));
+}
+
+.av-vehicles-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.av-vehicles-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--ft-text-muted);
+  font-size: 14px;
+}
+
+/* Mobile card list — hidden on desktop */
+.av-vehicles-cards {
+  display: none;
+}
+
+.av-vehicles-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--ft-border);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  cursor: pointer;
+  transition:
+    background var(--ft-motion-fast) var(--ft-motion-easing),
+    border-color var(--ft-motion-fast) var(--ft-motion-easing),
+    box-shadow var(--ft-motion-fast) var(--ft-motion-easing);
+}
+
+.av-vehicles-card:hover,
+.av-vehicles-card:focus-visible {
+  background: color-mix(in srgb, var(--ft-primary-soft) 72%, #ffffff);
+  border-color: color-mix(in srgb, var(--ft-primary) 55%, var(--ft-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ft-primary) 55%, transparent);
+}
+
+.av-vehicles-card:focus-visible {
+  outline: none;
+  box-shadow: var(--ft-shadow-focus);
+}
+
+.av-vehicles-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.av-vehicles-card-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.av-vehicles-card-photo.ft-avatar,
+.av-vehicles-card-identity .ft-avatar {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.av-vehicles-card-photo.ft-avatar img,
+.av-vehicles-card-identity .ft-avatar img {
+  object-fit: cover;
+}
+
+.av-vehicles-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ft-text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.av-vehicles-card-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.av-vehicles-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.av-vehicles-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ft-text-muted);
+}
+
+.av-vehicles-card-value {
+  font-size: 13px;
+  color: var(--ft-text);
+  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.av-vehicles-card-value .av-vehicles-user,
+.av-vehicles-card-value .av-vehicles-location {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.av-vehicles-card-value .av-vehicles-user span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.av-vehicles-card-value .av-vehicles-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.av-vehicles-card-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ft-border);
+}
+
+.av-vehicles-card-actions .av-vehicles-action-btn {
+  flex: 1;
+  justify-content: center;
+  height: 36px;
+}
+
+/* Mobile: one shared shell scroller — unlock nested list panel height. */
+@media (max-width: 820px) {
+  .av-vehicles-page {
+    flex: none;
+    min-height: auto;
+  }
+
+  .av-vehicles-panel,
+  .av-vehicles-table-section {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .av-vehicles-table-wrap {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 768px) {
+  .av-vehicles-toolbar {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    padding-bottom: 12px;
+  }
+
+  .av-vehicles-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+  }
+
+  .av-vehicles-toolbar-actions {
+    flex-shrink: 0;
+  }
+
+  .av-vehicles-filters-btn {
+    display: none;
+  }
+
+  .av-vehicles-new-btn {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .av-vehicles-filters-panel,
+  .av-vehicles-filters-panel--open {
+    display: block;
+    padding: 0 0 12px;
+    border-bottom: none;
+  }
+
+  .av-vehicles-filters-panel .ft-filter-bar {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 0 16px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .av-vehicles-filters-panel .ft-filter-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .av-vehicles-filters-panel .ft-filter-chip {
+    flex-shrink: 0;
+  }
+
+  .av-vehicles-filters-panel .ft-filter-chip--active {
+    background: var(--ft-primary-soft);
+    background-color: var(--ft-primary-soft);
+    border-color: var(--ft-primary);
+    color: var(--ft-primary);
+  }
+
+  .av-vehicles-filters-panel .ft-filter-chip--active .ft-filter-count {
+    background: var(--ft-primary);
+    color: #ffffff;
+  }
+
+  .av-vehicles-table-wrap {
+    display: block;
+  }
+
+  .av-vehicles-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px 16px 16px;
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .av-vehicles-card {
+    background:
+      linear-gradient(
+        165deg,
+        color-mix(in srgb, var(--ft-primary-soft) 88%, #ffffff) 0%,
+        color-mix(in srgb, var(--ft-primary-soft) 42%, var(--ft-surface)) 100%
+      );
+    border-radius: 14px;
+  }
+
+  .av-vehicles-card:hover,
+  .av-vehicles-card:focus-visible {
+    background:
+      linear-gradient(
+        165deg,
+        color-mix(in srgb, var(--ft-primary-soft) 100%, #ffffff) 0%,
+        color-mix(in srgb, var(--ft-primary-soft) 58%, var(--ft-surface)) 100%
+      );
+  }
+
+  .av-vehicles-card-actions {
+    border-top-color: color-mix(in srgb, var(--ft-primary-border) 80%, var(--ft-border));
+  }
+
+  .av-vehicles-card-actions .av-vehicles-action-btn {
+    background: color-mix(in srgb, var(--ft-surface) 82%, #ffffff);
+    border-color: color-mix(in srgb, var(--ft-primary-border) 70%, var(--ft-border));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-vehicles-search,
+  .av-vehicles-filters-btn,
+  .av-vehicles-new-btn,
+  .av-vehicles-table tbody tr.av-vehicles-row,
+  .av-vehicles-card,
+  .av-vehicles-actions-btn {
+    transition: none !important;
+  }
+
+  .av-vehicles-new-btn:hover:not(:disabled) {
+    transform: none;
+  }
+}

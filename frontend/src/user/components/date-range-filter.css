@@ -1,0 +1,55 @@
+.ft-date-range-filter--mobile {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.ft-date-range-filter--mobile .ft-date-range-filter__modes {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.ft-date-range-filter--mobile .ft-date-range-filter__modes button {
+  width: 100%;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.ft-date-range-filter--mobile .ft-date-range-filter__row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+}
+
+.ft-date-range-filter--mobile .ft-date-range-filter__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ft-date-range-filter--mobile .ft-date-range-filter__parts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.ft-date-range-filter--mobile .ft-date-range-filter__row > input,
+.ft-date-range-filter--mobile .ft-date-range-filter__parts > input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .ft-date-range-filter:not(.ft-date-range-filter--mobile) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
