@@ -43,6 +43,30 @@ Set `VITE_MAPTILER_KEY` (and optionally `VITE_MAPBOX_TOKEN`), then:
 npm run dev
 ```
 
+Leave `VITE_API_BASE_URL` empty for local dev and for same-origin deploys (DigitalOcean serving UI + API together).
+
+## Hostinger frontend → DigitalOcean API
+
+When the static UI is on Hostinger and the API is on DigitalOcean:
+
+1. In `frontend`, copy `.env.production.example` to `.env.production` and set:
+   - `VITE_API_BASE_URL` to the DigitalOcean origin (e.g. `http://168.144.183.130`)
+   - real MapTiler / Mapbox keys
+2. Build and upload **only** `dist/` to Hostinger:
+
+```bash
+cd frontend
+npm run build
+```
+
+3. On the DigitalOcean backend `.env`, set CORS to your Hostinger origin (comma-separated if you also keep the DO UI origin):
+
+```env
+FRONTEND_URL=https://your-hostinger-domain.com,http://168.144.183.130
+```
+
+Restart the API after changing `FRONTEND_URL`. Do not replace the DigitalOcean-served frontend unless you intend to.
+
 ## Local-only files (not in git)
 
 - `backend/uploads/` — user-uploaded photos and license scans (directory is kept via `.gitkeep`)
