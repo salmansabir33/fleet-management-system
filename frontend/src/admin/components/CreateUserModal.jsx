@@ -4,6 +4,9 @@ import api from '../../api'
 import { Modal, Input, Select, Button } from '../../shared/components'
 import { useTheme } from '../../theme'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useAuth } from '../../auth/AuthContext'
+import { readActingAdminId } from '../../auth/actingAdminStorage'
+import SuperAdminFleetSelect from './SuperAdminFleetSelect'
 import UserPhotoField from './UserPhotoField'
 import { uploadUserPhoto, uploadVehiclePhoto } from '../utils/userPic'
 import { isNewUserPasswordValid, newUserPasswordChecks } from '../../shared/passwordPolicy'
@@ -53,6 +56,9 @@ const emptyVehicleForm = {
 const CreateUserModal = ({ onClose, onCreated }) => {
   const { tokens } = useTheme()
   const { apiFor, isManager } = usePanelScope()
+  const { role } = useAuth()
+  const [targetAdminId, setTargetAdminId] = useState('')
+  const saGlobalCreate = role === 'super_admin' && readActingAdminId() == null && !isManager
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -111,6 +117,7 @@ const CreateUserModal = ({ onClose, onCreated }) => {
     && isNewUserPasswordValid(password)
     && vehicle.name.trim().length > 0
     && vehicle.imei.trim().length > 0
+    && (!saGlobalCreate || Boolean(targetAdminId))
 
   const passwordChecks = newUserPasswordChecks(password)
 
@@ -133,6 +140,10 @@ const CreateUserModal = ({ onClose, onCreated }) => {
 
   const handleCreate = async () => {
     if (!canSave) return
+    if (saGlobalCreate && !targetAdminId) {
+      setError('Fleet admin is required')
+      return
+    }
     setSaving(true)
     setError(null)
 
@@ -155,6 +166,9 @@ const CreateUserModal = ({ onClose, onCreated }) => {
       password: password.trim(),
       full_name: fullName.trim() || null,
       phone_number: phoneNumber.trim() || null,
+    }
+    if (saGlobalCreate && targetAdminId) {
+      userPayload.admin_id = Number(targetAdminId)
     }
 
     // Manager scope: one atomic POST (user + vehicle). Admin keeps the
@@ -250,6 +264,16 @@ const CreateUserModal = ({ onClose, onCreated }) => {
         <p style={{ margin: '0 0 14px', fontSize: 13, color: tokens.textSecondary }}>
           Every user must own a vehicle — fill in both below.
         </p>
+
+        {saGlobalCreate && (
+          <div style={{ marginBottom: 14 }}>
+            <SuperAdminFleetSelect
+              required
+              value={targetAdminId}
+              onChange={(e) => setTargetAdminId(e.target.value)}
+            />
+          </div>
+        )}
 
         {error && (
           <div style={{

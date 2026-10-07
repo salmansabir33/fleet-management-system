@@ -23,7 +23,7 @@ import logging
 from datetime import datetime, timezone
 
 from tracker_backend.db import SessionLocal
-from tracker_backend.models import Device, DevicePosition, DeviceAlert
+from tracker_backend.models import Device, DevicePosition, DeviceAlert, Geofence
 from tracker_backend.services.report import (
     OVERSPEED_THRESHOLD_KMH,
     HARSH_BRAKE_DELTA_KMH,
@@ -163,18 +163,24 @@ def check_driving_events() -> None:
             # --- Geofence exit — only meaningful for devices that have
             # a primary geofence configured ---
             if device.primary_geofence_id is not None:
-                prev_ids = set(previous.geofence_ids or [])
-                curr_ids = set(current.geofence_ids or [])
-                was_inside = device.primary_geofence_id in prev_ids
-                is_inside = device.primary_geofence_id in curr_ids
+                geofence = (
+                    db.query(Geofence)
+                    .filter(Geofence.id == device.primary_geofence_id)
+                    .first()
+                )
+                if geofence is not None and geofence.admin_id == device.admin_id:
+                    prev_ids = set(previous.geofence_ids or [])
+                    curr_ids = set(current.geofence_ids or [])
+                    was_inside = device.primary_geofence_id in prev_ids
+                    is_inside = device.primary_geofence_id in curr_ids
 
-                if was_inside and not is_inside:
-                    _raise_alert(
-                        db, device.id, "geofence_exit", "critical",
-                        f"'{device.name}' left its assigned geofence.",
-                    )
-                elif is_inside:
-                    _resolve_alert(db, device.id, "geofence_exit")
+                    if was_inside and not is_inside:
+                        _raise_alert(
+                            db, device.id, "geofence_exit", "critical",
+                            f"'{device.name}' left its assigned geofence.",
+                        )
+                    elif is_inside:
+                        _resolve_alert(db, device.id, "geofence_exit")
 
         db.commit()
     finally:

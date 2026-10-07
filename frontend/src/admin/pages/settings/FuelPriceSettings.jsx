@@ -15,6 +15,8 @@ import {
   EmptyState,
   Badge,
 } from '../../../shared/components'
+import { useAuth } from '../../../auth/AuthContext'
+import { readActingAdminId, readActingAdminLabel } from '../../../auth/actingAdminStorage'
 
 const localTodayIso = () => {
   const d = new Date()
@@ -25,8 +27,16 @@ const localTodayIso = () => {
 
 const dateKey = (value) => String(value || '').slice(0, 10)
 
-const FuelPriceSettings = () => {
+const FuelPriceSettings = ({ fleetScoped = false, globalMode = false }) => {
   const { tokens } = useTheme()
+  const { role } = useAuth()
+  const actingAdminId = readActingAdminId()
+  const actingLabel = readActingAdminLabel()
+  const scopeBadgeText = role === 'super_admin' && globalMode
+    ? 'Editing global prices'
+    : (role === 'super_admin' && actingAdminId != null
+      ? `Editing ${actingLabel || 'fleet admin'}'s override`
+      : null)
   const [fuelTypes, setFuelTypes] = useState([])
   const [prices, setPrices] = useState([])
   const [loading, setLoading] = useState(true)
@@ -111,6 +121,30 @@ const FuelPriceSettings = () => {
     }
   }
 
+  const visiblePrices = prices.filter((price) => {
+    if (globalMode) return price.admin_id == null
+    if (fleetScoped) return price.admin_id == null || price.admin_id != null
+    return true
+  })
+
+  const isFleetOverride = (price) => price.admin_id != null
+
+  const canEditPrice = (price) => {
+    if (globalMode) return price.admin_id == null
+    if (fleetScoped) return price.admin_id != null
+    return true
+  }
+
+  const handleRevertOverride = async (price) => {
+    if (!window.confirm('Revert this fleet override? Global price will apply again.')) return
+    try {
+      await api.delete(`/api/fuel-prices/${price.id}`)
+      await fetchPrices()
+    } catch (err) {
+      setEditError(err.response?.data?.detail || 'Failed to revert override')
+    }
+  }
+
   const getFuelTypeName = (id) => {
     const type = fuelTypes.find((t) => Number(t.id) === Number(id))
     if (!type?.name) return `Type ${id}`
@@ -189,7 +223,13 @@ const FuelPriceSettings = () => {
 
   return (
     <div className="ft-admin-settings-grid ft-fuel-price-settings">
-      <Card title="Add fuel price">
+      {scopeBadgeText && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Badge>{scopeBadgeText}</Badge>
+        </div>
+      )}
+      {(globalMode || fleetScoped) && (
+      <Card title={globalMode ? 'Add global fuel price' : 'Add fleet fuel price'}>
         <form
           onSubmit={handleSubmit}
           className="ft-fuel-price-form"
@@ -233,22 +273,41 @@ const FuelPriceSettings = () => {
           </div>
         </form>
       </Card>
+      )}
 
       <Card title="Price history" className="ft-fuel-price-history">
         {editError && errorBanner(editError)}
-        {prices.length > 0 ? (
+        {visiblePrices.length > 0 ? (
           <Table
             className="ft-table--comfortable ft-table-wrap--scroll"
             columns={[
+              { key: 'scope', label: 'Scope' },
               { key: 'fuel', label: 'Fuel Type' },
               { key: 'price', label: 'Price (PKR)' },
               { key: 'from', label: 'From' },
               { key: 'to', label: 'To' },
-              { key: 'actions', label: 'Edit' },
+              { key: 'actions', label: 'Actions' },
             ]}
           >
-            {prices.map((price) => (
+            {visiblePrices.map((price) => (
               <TableRow key={price.id}>
+                <td>
+                  {isFleetOverride(price) ? (
+                    <Badge
+                      color={tokens.primary}
+                      background={hexToRgba(tokens.primary, 0.14)}
+                    >
+                      Your fleet
+                    </Badge>
+                  ) : (
+                    <Badge
+                      color={tokens.textMuted}
+                      background={hexToRgba(tokens.textMuted, 0.12)}
+                    >
+                      Global
+                    </Badge>
+                  )}
+                </td>
                 <td>{getFuelTypeName(price.fuel_type_id)}</td>
                 <td>
                   {editingId === price.id ? (
@@ -281,19 +340,30 @@ const FuelPriceSettings = () => {
                   )}
                 </td>
                 <td>
-                  {editingId === price.id ? (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <IconButton label="Save" size="sm" onClick={() => handleSaveEdit(price)}>
-                        <Check size={14} color={tokens.primary} />
-                      </IconButton>
-                      <IconButton label="Cancel" size="sm" onClick={handleCancelEdit}>
-                        <X size={14} color={tokens.textMuted} />
-                      </IconButton>
-                    </div>
+                  {canEditPrice(price) ? (
+                    editingId === price.id ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <IconButton label="Save" size="sm" onClick={() => handleSaveEdit(price)}>
+                          <Check size={14} color={tokens.primary} />
+                        </IconButton>
+                        <IconButton label="Cancel" size="sm" onClick={handleCancelEdit}>
+                          <X size={14} color={tokens.textMuted} />
+                        </IconButton>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <IconButton label="Edit" size="sm" onClick={() => handleEditClick(price)}>
+                          <Pencil size={14} />
+                        </IconButton>
+                        {fleetScoped && isFleetOverride(price) && (
+                          <Button type="button" variant="ghost" size="sm" onClick={() => handleRevertOverride(price)}>
+                            Revert
+                          </Button>
+                        )}
+                      </div>
+                    )
                   ) : (
-                    <IconButton label="Edit" size="sm" onClick={() => handleEditClick(price)}>
-                      <Pencil size={14} />
-                    </IconButton>
+                    <span className="ft-muted" style={{ fontSize: 12 }}>Read-only</span>
                   )}
                 </td>
               </TableRow>

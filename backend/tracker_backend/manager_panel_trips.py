@@ -54,6 +54,7 @@ def build_admin_trips(
     device_id: int | None = None,
     manager_id: int | None = None,
     geofence_id: int | None = None,
+    admin_id: int | None = None,
 ) -> list[AdminTripOut]:
     """Fleet (or manager-scoped) trip list with cheap list-path work.
 
@@ -74,6 +75,7 @@ def build_admin_trips(
         device_id=device_id,
         manager_id=manager_id,
         geofence_id=geofence_id,
+        admin_id=admin_id,
     )
 
     device_ids = {t.device_id for t in trips}

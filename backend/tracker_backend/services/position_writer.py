@@ -28,7 +28,7 @@ from sqlalchemy.orm import load_only
 from tracker_backend.db import SessionLocal
 from tracker_backend.models import Device, DevicePosition
 
-logger = logging.getLogger("position_writer")
+logger = logging.getLogger(__name__)
 
 MOVE_THRESHOLD_METERS = 25
 HEARTBEAT_INTERVAL = timedelta(minutes=5)
@@ -463,9 +463,18 @@ def _get_or_create_device(db, devices_by_id, traccar_device_id):
     if device:
         return device
     name = devices_by_id.get(traccar_device_id, {}).get("name", f"Device {traccar_device_id}")
+    # Quarantine row: admin_id/user_id stay None until claimed via Super Admin
+    # Unassigned or fleet claim.
     device = Device(traccar_device_id=traccar_device_id, name=name)
     db.add(device)
     db.flush()  # get device.id without a full commit yet
+    logger.warning(
+        "Created quarantine Device id=%s traccar_device_id=%s name=%r "
+        "(admin_id/user_id null until claimed)",
+        device.id,
+        traccar_device_id,
+        name,
+    )
     return device
 
 

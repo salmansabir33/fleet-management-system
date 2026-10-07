@@ -12,7 +12,6 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
 
@@ -23,6 +22,18 @@
   justify-content: flex-end;
   gap: 10px;
   flex-shrink: 0;
+  margin-left: auto;
+}
+
+.au-users-admin-filter.ft-sa-admin-filter--inline {
+  flex: 0 0 auto;
+  max-width: 220px;
+}
+
+.au-users-admin-filter.ft-sa-admin-filter--inline .ft-sa-admin-filter__inline-select,
+.au-users-admin-filter.ft-sa-admin-filter--inline .ft-select-trigger {
+  height: 36px !important;
+  min-height: 36px;
 }
 
 .au-users-search {
@@ -31,7 +42,7 @@
   gap: 8px;
   flex: 1 1 220px;
   min-width: 180px;
-  max-width: 360px;
+  max-width: none;
   height: 36px;
   padding: 0 12px;
   border-radius: 8px;
@@ -580,8 +591,19 @@
     width: 100%;
   }
 
+  .au-users-admin-filter.ft-sa-admin-filter--inline {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .au-users-admin-filter.ft-sa-admin-filter--inline .ft-field {
+    width: 100%;
+    flex: 1;
+  }
+
   .au-users-header-actions {
     width: 100%;
+    margin-left: 0;
   }
 
   .au-users-header-actions:empty {

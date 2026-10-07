@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { readActingAdminId } from './auth/actingAdminStorage'
 import { clearAuth, readAuthState, readToken } from './auth/authStorage'
 
 const resolveApiBaseUrl = () => {
@@ -28,6 +29,13 @@ api.interceptors.request.use((config) => {
   const token = readToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  const authState = readAuthState()
+  if (authState?.role === 'super_admin') {
+    const actingAdminId = readActingAdminId()
+    if (actingAdminId != null) {
+      config.headers['X-Acting-Admin-Id'] = String(actingAdminId)
+    }
   }
   return config
 })

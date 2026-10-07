@@ -20,6 +20,10 @@ import Playback from './user/pages/Playback'
 import UserSettings from './user/pages/UserSettings'
 
 import AdminLayout from './admin/components/AdminLayout'
+import SuperAdminLayout from './super-admin/components/SuperAdminLayout'
+import SuperAdminAdmins from './super-admin/pages/Admins'
+import SuperAdminUnassigned from './super-admin/pages/Unassigned'
+import SuperAdminEnterFleet from './super-admin/pages/EnterFleet'
 import AdminDashboard from './admin/pages/AdminDashboard'
 import AllVehicles from './admin/pages/AllVehicles'
 import AdminVehicleDetail from './admin/pages/AdminVehicleDetail'
@@ -111,6 +115,41 @@ const App = () => {
                   <Route path="settings" element={<UserSettings />} />
                 </Route>
 
+                <Route path="/super-admin" element={(
+                  <ProtectedRoute roles={['super_admin']}>
+                    <SuperAdminLayout />
+                  </ProtectedRoute>
+                )}>
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="dashboard" element={<AdminDashboard />} />
+                  <Route path="vehicles" element={<AllVehicles />} />
+                  <Route path="vehicles/:deviceId" element={<AdminVehicleDetail />} />
+                  <Route path="map" element={<AdminMap />} />
+                  <Route path="playback" element={<ManagerPlaybackHub />} />
+                  <Route path="playback/:deviceId" element={<Playback />} />
+                  <Route path="maintenance" element={<AdminMaintenanceVehicles />} />
+                  <Route path="maintenance/:vehicleId" element={withMaintenanceSuspense(<MaintenanceVehicleLayout />)}>
+                    <Route index element={withMaintenanceSuspense(<MaintenanceIndex />)} />
+                    <Route path="baseline" element={withMaintenanceSuspense(<MaintenanceBaseline />)} />
+                    <Route path="entry" element={withMaintenanceSuspense(<Maintenance />)} />
+                    <Route path="report" element={withMaintenanceSuspense(<MaintenanceReport />)} />
+                  </Route>
+                  <Route path="managers" element={<Managers />} />
+                  <Route path="trips" element={<AdminTrips />} />
+                  <Route path="users" element={<AllUsers />} />
+                  <Route path="users/:userId" element={<UserDetail />} />
+                  <Route path="geofences" element={<AdminGeofences />} />
+                  <Route path="drivers" element={<AdminDrivers />} />
+                  <Route path="drivers/:driverId" element={<AdminDriverDetail />} />
+                  <Route path="drivers/:driverId/history" element={<AdminDriverDetail />} />
+                  <Route path="routes" element={<AdminRoutes />} />
+                  <Route path="notifications" element={<AdminNotificationsPage />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="admins" element={<SuperAdminAdmins />} />
+                  <Route path="unassigned" element={<SuperAdminUnassigned />} />
+                  <Route path="enter-fleet" element={<SuperAdminEnterFleet />} />
+                </Route>
+
                 <Route path="/admin" element={(
                   <ProtectedRoute roles={['admin']}>
                     <AdminLayout />
@@ -144,12 +183,12 @@ const App = () => {
                 </Route>
 
                 <Route path="/manager/select" element={(
-                  <ProtectedRoute roles={['admin']}>
+                  <ProtectedRoute roles={['admin', 'super_admin']}>
                     <ManagerPicker />
                   </ProtectedRoute>
                 )} />
                 <Route path="/manager/:managerId" element={(
-                  <ProtectedRoute roles={['manager', 'admin']}>
+                  <ProtectedRoute roles={['manager', 'admin', 'super_admin']}>
                     <ManagerLayout />
                   </ProtectedRoute>
                 )}>

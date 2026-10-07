@@ -12,44 +12,58 @@ import {
   LoadingState,
   EmptyState,
   SearchInput,
-  FilterBar,
 } from '../../shared/components'
 import { MobilePageHeading } from '../../shared/shell'
 import { adminNavLabel } from '../../admin/navItems'
+import AdminFilterBar from '../../admin/components/AdminFilterBar'
+import { useSaAdminListParams } from '../../admin/hooks/useSaAdminListParams'
 import VehicleHeroArt from '../../user/components/VehicleHeroArt'
 import { deriveVehicleStatus } from '../../user/utils/vehicleStatus'
 import { vehiclePhotoSrc } from '../../user/utils/vehiclePhoto'
 import { usePanelScope } from '../hooks/usePanelScope'
 
-const OWNER_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'admin', label: 'Admin' },
-  { key: 'user', label: 'User' },
-]
-
 const ManagerPlaybackHub = () => {
   const navigate = useNavigate()
   const { tokens } = useTheme()
   const { apiFor, basePath, can, isManager } = usePanelScope()
+  const saListParams = useSaAdminListParams()
+  const saAdminId = saListParams.admin_id ?? null
   const [live, setLive] = useState([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
-  const [ownerFilter, setOwnerFilter] = useState('all')
 
   useEffect(() => {
     if (!can('live_tracking')) {
       setLoading(false)
-      return
+      return undefined
     }
     let cancelled = false
-    api.get(apiFor('/vehicles', '/api/live'))
-      .then((res) => {
-        if (!cancelled) setLive(res.data.live || [])
-      })
-      .catch((err) => console.error('Failed to load vehicles:', err))
-      .finally(() => { if (!cancelled) setLoading(false) })
+    setLoading(true)
+
+    const load = async () => {
+      try {
+        const res = await api.get(apiFor('/vehicles', '/api/live'))
+        if (cancelled) return
+        let rows = res.data.live || []
+        if (!isManager && saAdminId != null) {
+          const devRes = await api.get('/api/fleet/devices', {
+            params: { admin_id: saAdminId },
+          })
+          if (cancelled) return
+          const allowed = new Set((devRes.data || []).map((d) => d.id))
+          rows = rows.filter((row) => allowed.has(row.db_id))
+        }
+        setLive(rows)
+      } catch (err) {
+        console.error('Failed to load vehicles:', err)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    load()
     return () => { cancelled = true }
-  }, [apiFor, can])
+  }, [apiFor, can, isManager, saAdminId])
 
   const mapped = useMemo(() => (
     live
@@ -66,20 +80,13 @@ const ManagerPlaybackHub = () => {
       }))
   ), [live])
 
-  const ownerCounts = useMemo(() => ({
-    all: mapped.length,
-    admin: mapped.filter((row) => row.ownerKind === 'admin').length,
-    user: mapped.filter((row) => row.ownerKind === 'user').length,
-  }), [mapped])
-
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return mapped.filter((row) => {
-      if (!isManager && ownerFilter !== 'all' && row.ownerKind !== ownerFilter) return false
-      if (!q) return true
-      return `${row.name} ${row.plate || ''} ${row.ownerName || ''}`.toLowerCase().includes(q)
-    })
-  }, [mapped, query, ownerFilter, isManager])
+    if (!q) return mapped
+    return mapped.filter((row) => (
+      `${row.name} ${row.plate || ''} ${row.ownerName || ''}`.toLowerCase().includes(q)
+    ))
+  }, [mapped, query])
 
   if (!can('live_tracking')) {
     return <EmptyState title="You don't have permission to replay trips." />
@@ -88,19 +95,22 @@ const ManagerPlaybackHub = () => {
   return (
     <div className="ft-page-stack">
       <MobilePageHeading>{adminNavLabel('/admin/playback')}</MobilePageHeading>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search vehicles…"
-          style={{ maxWidth: 320 }}
+          style={{ flex: '1 1 220px', minWidth: 180, maxWidth: 'none' }}
         />
         {!isManager && (
-          <FilterBar
-            options={OWNER_FILTERS.map((opt) => ({ ...opt, count: ownerCounts[opt.key] }))}
-            value={ownerFilter}
-            onChange={setOwnerFilter}
-          />
+          <AdminFilterBar inline className="ft-playback-hub-admin-filter" />
         )}
       </div>
       {loading ? (

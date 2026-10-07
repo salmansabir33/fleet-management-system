@@ -10,9 +10,6 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  ChevronsLeft,
-  ChevronsRight,
-  ChevronLeft,
   Eye,
   EyeOff,
 } from 'lucide-react'
@@ -28,13 +25,12 @@ import { adminNavLabel } from '../navItems'
 import CreateUserModal from '../components/CreateUserModal'
 import AddManagerModal from '../components/AddManagerModal'
 import EditUserModal from '../components/EditUserModal'
+import AssignManagerModal from '../components/AssignManagerModal'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useSaAdminListParams, useShowSaAdminFilter } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import { userPicSrc } from '../utils/userPic'
 import '../styles/all-users.css'
-
-const PAGE_SIZE = 10
-/** Matches `.au-users-cards` / table swap in all-users.css */
-const MOBILE_CARDS_MQ = '(max-width: 768px)'
 
 function PasswordReveal({ userId }) {
   const { role } = useAuth()
@@ -113,107 +109,42 @@ function SortIcon({ active, dir }) {
   return <ChevronDown size={14} className="au-users-sort-icon" />
 }
 
-function UsersPagination({ page, pageCount, onPageChange }) {
-  if (!pageCount || pageCount < 1) return null
-
-  return (
-    <nav className="au-users-pagination" aria-label="Pagination">
-      <button
-        type="button"
-        className="au-users-page-btn"
-        disabled={page <= 1}
-        aria-label="First page"
-        onClick={() => onPageChange(1)}
-      >
-        <ChevronsLeft size={14} />
-      </button>
-      <button
-        type="button"
-        className="au-users-page-btn"
-        disabled={page <= 1}
-        aria-label="Previous page"
-        onClick={() => onPageChange(page - 1)}
-      >
-        <ChevronLeft size={14} />
-      </button>
-      <button
-        type="button"
-        className="au-users-page-btn au-users-page-btn--active"
-        aria-current="page"
-        onClick={() => onPageChange(page)}
-      >
-        {page}
-      </button>
-      <button
-        type="button"
-        className="au-users-page-btn"
-        disabled={page >= pageCount}
-        aria-label="Next page"
-        onClick={() => onPageChange(page + 1)}
-      >
-        <ChevronRight size={14} />
-      </button>
-      <button
-        type="button"
-        className="au-users-page-btn"
-        disabled={page >= pageCount}
-        aria-label="Last page"
-        onClick={() => onPageChange(pageCount)}
-      >
-        <ChevronsRight size={14} />
-      </button>
-    </nav>
-  )
-}
-
 const AllUsers = () => {
   const navigate = useNavigate()
   const { role } = useAuth()
   const { basePath, apiFor, isManager, can } = usePanelScope()
+  const saListParams = useSaAdminListParams()
+  const showAdminCol = useShowSaAdminFilter()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [sortKey, setSortKey] = useState('id')
   const [sortDir, setSortDir] = useState('asc')
-  const [isMobile, setIsMobile] = useState(() => (
-    typeof window !== 'undefined' ? window.matchMedia(MOBILE_CARDS_MQ).matches : false
-  ))
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAddManagerModal, setShowAddManagerModal] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [editTarget, setEditTarget] = useState(null)
+  const [managerTarget, setManagerTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
-
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_CARDS_MQ)
-    const sync = () => setIsMobile(mq.matches)
-    sync()
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
-  }, [])
 
   const loadUsers = useCallback(async (q) => {
     setLoading(true)
     try {
-      const res = await api.get(apiFor('/users', '/api/users'), { params: q ? { q } : {} })
+      const params = { ...saListParams, ...(q ? { q } : {}) }
+      const res = await api.get(apiFor('/users', '/api/users'), { params })
       setUsers(res.data)
     } catch (err) {
       console.error('Failed to load users:', err)
     } finally {
       setLoading(false)
     }
-  }, [apiFor])
+  }, [apiFor, saListParams])
 
   useEffect(() => {
     const handle = setTimeout(() => loadUsers(search), 250)
     return () => clearTimeout(handle)
   }, [search, loadUsers])
-
-  useEffect(() => {
-    setPage(1)
-  }, [search])
 
   const openDetail = (userId) => navigate(`${basePath}/users/${userId}`)
 
@@ -258,11 +189,7 @@ const AllUsers = () => {
     return copy
   }, [users, sortKey, sortDir])
 
-  const pageCount = Math.max(1, Math.ceil(sortedUsers.length / PAGE_SIZE))
-  // Mobile: full list in page scroll (no pagination). Desktop: sliced page.
-  const listUsers = isMobile
-    ? sortedUsers
-    : sortedUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const listUsers = sortedUsers
 
   const toggleSort = (key) => {
     if (sortKey === key) {
@@ -320,6 +247,13 @@ const AllUsers = () => {
           onSaved={() => loadUsers(search)}
         />
       )}
+      {managerTarget && (
+        <AssignManagerModal
+          user={managerTarget}
+          onClose={() => setManagerTarget(null)}
+          onAssigned={() => loadUsers(search)}
+        />
+      )}
 
       <div className="au-users-header">
         <div className="au-users-search">
@@ -331,6 +265,7 @@ const AllUsers = () => {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <AdminFilterBar inline className="au-users-admin-filter" />
         <div className="au-users-header-actions">
           {can('user_management') && (
             <button
@@ -339,7 +274,7 @@ const AllUsers = () => {
               onClick={() => setShowCreateModal(true)}
             >
               <UserPlus size={15} />
-              Add user
+              Add user & vehicle
             </button>
           )}
           {!isManager && (
@@ -403,6 +338,7 @@ const AllUsers = () => {
                       </span>
                     </th>
                     {role === 'admin' && <th>Password</th>}
+                    {showAdminCol && <th>Admin</th>}
                     <th
                       className="au-users-th--sortable"
                       onClick={() => toggleSort('role')}
@@ -448,6 +384,11 @@ const AllUsers = () => {
                             <PasswordReveal userId={u.id} />
                           </td>
                         )}
+                        {showAdminCol && (
+                          <td className="au-users-cell-muted">
+                            {u.admin_id == null ? 'Unassigned' : `#${u.admin_id}`}
+                          </td>
+                        )}
                         <td>{u.is_manager ? 'Manager' : 'User'}</td>
                         <td>
                           <UserVehicles vehicles={vehicles} />
@@ -482,6 +423,21 @@ const AllUsers = () => {
                                   <Trash2 size={15} />
                                 </button>
                               </>
+                            )}
+                            {role === 'super_admin' && !u.is_manager && (
+                              <button
+                                type="button"
+                                className="au-users-icon-btn"
+                                aria-label={`Assign ${displayName} to manager`}
+                                title="Assign to manager"
+                                onClick={(event) => {
+                                  stopRowAction(event)
+                                  setManagerTarget(u)
+                                }}
+                                onKeyDown={stopRowAction}
+                              >
+                                <UserPlus size={15} />
+                              </button>
                             )}
                             <button
                               type="button"
@@ -552,31 +508,45 @@ const AllUsers = () => {
                       </div>
                     </div>
 
-                    {can('user_management') && (
+                    {(can('user_management') || role === 'super_admin') && (
                       <div
                         className="au-users-card-actions"
                         onClick={stopRowAction}
                         onKeyDown={stopRowAction}
                       >
-                        <button
-                          type="button"
-                          className="au-users-action-btn au-users-action-btn--edit"
-                          onClick={() => setEditTarget(u)}
-                        >
-                          <Pencil size={14} />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="au-users-action-btn au-users-action-btn--delete"
-                          onClick={() => {
-                            setDeleteError(null)
-                            setDeleteTarget(u)
-                          }}
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
+                        {can('user_management') && (
+                          <>
+                            <button
+                              type="button"
+                              className="au-users-action-btn au-users-action-btn--edit"
+                              onClick={() => setEditTarget(u)}
+                            >
+                              <Pencil size={14} />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="au-users-action-btn au-users-action-btn--delete"
+                              onClick={() => {
+                                setDeleteError(null)
+                                setDeleteTarget(u)
+                              }}
+                            >
+                              <Trash2 size={14} />
+                              Delete
+                            </button>
+                          </>
+                        )}
+                        {role === 'super_admin' && !u.is_manager && (
+                          <button
+                            type="button"
+                            className="au-users-action-btn"
+                            onClick={() => setManagerTarget(u)}
+                          >
+                            <UserPlus size={14} />
+                            Manager
+                          </button>
+                        )}
                       </div>
                     )}
                   </article>
@@ -584,22 +554,6 @@ const AllUsers = () => {
               })}
             </div>
 
-            {!isMobile && (
-              <div className="au-users-footer">
-                <UsersPagination page={page} pageCount={pageCount} onPageChange={setPage} />
-                {!isManager ? (
-                  <button
-                    type="button"
-                    className="au-users-btn au-users-btn--ghost au-users-footer-btn"
-                    onClick={openManageGroups}
-                  >
-                    Add Manager
-                  </button>
-                ) : (
-                  <span />
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>

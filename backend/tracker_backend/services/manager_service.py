@@ -12,8 +12,11 @@ separate relationship — it's just every vehicle (Device) owned by every
 User currently assigned to that manager, since vehicles are owned by
 users, not by managers directly.
 """
-from tracker_backend.models import User, Manager, Device, PermissionDefinition
-from tracker_backend.services.settings_catalog import default_bell_prefs
+from tracker_backend.models import User, Manager, Device
+from tracker_backend.services.settings_catalog import (
+    active_permission_keys,
+    default_bell_prefs,
+)
 
 
 def get_manager_by_user_id(db, user_id: int) -> Manager | None:
@@ -24,30 +27,29 @@ def promote_user_to_manager(db, user_id: int) -> Manager:
     already a manager just returns their existing Manager row instead
     of erroring or creating a duplicate.
 
-    If this user was themselves assigned to another manager
-    (User.manager_id set), that assignment is cleared as part of the
-    promotion — a manager shouldn't still show up as one of another
-    manager's assigned users. After the new Manager row is created,
-    the promoted user is self-assigned (User.manager_id = the new
-    Manager.id) so they count in their own assigned-users / vehicles
-    totals. Mirrors demote_manager's convention of doing this cleanup
-    explicitly at the app level rather than relying on a DB constraint.
+    Requires the user to have an admin_id (belongs to a fleet). Orphan
+    users cannot be promoted.
     """
+    from fastapi import HTTPException
+
     existing = get_manager_by_user_id(db, user_id)
     if existing is not None:
         return existing
 
     user = db.query(User).filter(User.id == user_id).first()
-    if user is not None and user.manager_id is not None:
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.admin_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot promote an unassigned user to manager; assign them to an admin first",
+        )
+
+    if user.manager_id is not None:
         user.manager_id = None
 
-    active_keys = (
-        db.query(PermissionDefinition)
-        .filter(PermissionDefinition.is_active.is_(True))
-        .all()
-    )
-    permissions = {row.key: True for row in active_keys}
-    notification_prefs = default_bell_prefs(db, "manager")
+    permissions = {key: True for key in active_permission_keys(db, user.admin_id)}
+    notification_prefs = default_bell_prefs(db, "manager", admin_id=user.admin_id)
     manager = Manager(
         user_id=user_id,
         permissions=permissions,
@@ -57,11 +59,10 @@ def promote_user_to_manager(db, user_id: int) -> Manager:
     db.commit()
     db.refresh(manager)
 
-    if user is not None:
-        user.manager_id = manager.id
-        db.commit()
-        db.refresh(manager)
-        db.refresh(user)
+    user.manager_id = manager.id
+    db.commit()
+    db.refresh(manager)
+    db.refresh(user)
 
     return manager
 
@@ -82,11 +83,25 @@ def demote_manager(db, manager_id: int) -> None:
 def assign_users_to_manager(db, manager_id: int, user_ids: list[int]) -> list[User]:
     """Points each given user's manager_id at `manager_id`, overwriting
     whatever manager (if any) they previously reported to. Skips ids
-    that don't exist rather than erroring, so one bad id in a batch
-    doesn't fail the whole assignment.
+    that don't exist rather than erroring. Rejects users whose admin_id
+    differs from the manager's linked user admin_id.
     """
+    from fastapi import HTTPException
+
+    manager = db.query(Manager).filter(Manager.id == manager_id).first()
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    manager_user = db.query(User).filter(User.id == manager.user_id).first()
+    if manager_user is None or manager_user.admin_id is None:
+        raise HTTPException(status_code=400, detail="Manager has no fleet admin_id")
+
     users = db.query(User).filter(User.id.in_(user_ids)).all()
     for user in users:
+        if user.admin_id != manager_user.admin_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"User {user.id} is not in the same fleet as the manager",
+            )
         user.manager_id = manager_id
     db.commit()
     for user in users:

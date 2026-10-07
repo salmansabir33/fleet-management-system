@@ -1,5 +1,6 @@
 import {
   Children,
+  Fragment,
   forwardRef,
   isValidElement,
   useId,
@@ -50,14 +51,27 @@ export const Input = forwardRef(function Input({
   )
 })
 
+function flattenSelectChildren(children, out = []) {
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return
+    if (child.type === 'option') {
+      out.push(child)
+      return
+    }
+    // Compact filters may pass a Fragment; unwrap so options are visible.
+    if (child.type === Fragment) {
+      flattenSelectChildren(child.props.children, out)
+    }
+  })
+  return out
+}
+
 function readSelectOptions(children) {
-  return Children.toArray(children)
-    .filter((child) => isValidElement(child) && child.type === 'option')
-    .map((child) => ({
-      value: child.props.value == null ? '' : String(child.props.value),
-      label: child.props.children,
-      disabled: Boolean(child.props.disabled),
-    }))
+  return flattenSelectChildren(children).map((child) => ({
+    value: child.props.value == null ? '' : String(child.props.value),
+    label: child.props.children,
+    disabled: Boolean(child.props.disabled),
+  }))
 }
 
 export const Select = forwardRef(function Select({

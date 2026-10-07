@@ -111,6 +111,8 @@ def process_trip_detection(devices: list, positions: list):
             )
             if geofence is None:
                 continue
+            if geofence.admin_id != device.admin_id:
+                continue
 
             # Parse fix_time the same way position_writer.py parses it.
             fix_time = datetime.fromisoformat(
@@ -301,6 +303,7 @@ def get_trips_in_range_fleet_wide(
     device_id: int | None = None,
     manager_id: int | None = None,
     geofence_id: int | None = None,
+    admin_id: int | None = None,
 ) -> list[Trip]:
     """All trips across the fleet whose time window overlaps [start_dt, end_dt).
     Pass start_dt=end_dt=None to skip the time window and return every trip.
@@ -372,6 +375,14 @@ def get_trips_in_range_fleet_wide(
             query = query.filter(Trip.device_id.in_(manager_device_ids))
     elif device_id is not None:
         query = query.filter(Trip.device_id == device_id)
+
+    if admin_id is not None:
+        fleet_device_ids = [
+            row[0] for row in db.query(Device.id).filter(Device.admin_id == admin_id).all()
+        ]
+        if not fleet_device_ids:
+            return []
+        query = query.filter(Trip.device_id.in_(fleet_device_ids))
 
     return query.order_by(Trip.start_time.desc()).all()
 
@@ -557,7 +568,7 @@ def calculate_trip_metrics(db, trip: Trip, device: Device):
     # 10. price_per_liter_used — None if device has no fuel type.
     if device.fuel_type_id is not None:
         price_per_liter_used = get_applicable_fuel_price(
-            db, device.fuel_type_id, trip.trip_date
+            db, device.fuel_type_id, trip.trip_date, admin_id=device.admin_id
         )
     else:
         price_per_liter_used = None
@@ -764,6 +775,8 @@ def _backfill_device_trips(db, device: Device):
         db.query(Geofence).filter(Geofence.id == device.primary_geofence_id).first()
     )
     if geofence is None:
+        return
+    if geofence.admin_id != device.admin_id:
         return
 
     positions = (

@@ -1,4 +1,4 @@
-"""Authentication endpoints — login for fleet users/managers and env-based admin."""
+"""Authentication endpoints — fleet login + DB-backed admin / super admin."""
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from tracker_backend.config import settings
 from tracker_backend.deps import get_current_principal, get_db
-from tracker_backend.models import Manager, User
+from tracker_backend.models import Admin, Manager, SuperAdmin, User
 from tracker_backend.rate_limit import check_rate_limit
 from tracker_backend.services import auth_service
 
@@ -23,6 +23,7 @@ class AuthUserOut(BaseModel):
     role: str
     user_id: int | None = None
     manager_id: int | None = None
+    admin_id: int | None = None
     username: str | None = None
     full_name: str | None = None
     pic_url: str | None = None
@@ -34,6 +35,7 @@ class LoginResponse(BaseModel):
     role: str
     user_id: int | None = None
     manager_id: int | None = None
+    admin_id: int | None = None
     username: str | None = None
     full_name: str | None = None
     pic_url: str | None = None
@@ -67,6 +69,7 @@ def _login_fleet_user(db: Session, username: str, password: str) -> LoginRespons
         "role": role,
         "user_id": user.id,
         "manager_id": manager.id if manager else None,
+        "admin_id": user.admin_id,
     })
 
     return LoginResponse(
@@ -74,6 +77,7 @@ def _login_fleet_user(db: Session, username: str, password: str) -> LoginRespons
         role=role,
         user_id=user.id,
         manager_id=manager.id if manager else None,
+        admin_id=user.admin_id,
         username=user.username,
         full_name=user.full_name,
         pic_url=_user_pic_url(user),
@@ -87,22 +91,44 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
 
 
 @router.post("/admin/login", response_model=LoginResponse)
-def admin_login(request: Request, payload: LoginRequest):
+def admin_login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+    """Super Admin first, then Admin. Env credentials are no longer used."""
     _enforce_login_rate_limit(request, "auth:admin-login")
     username = payload.username.strip()
-    if username != settings.ADMIN_USERNAME or payload.password != settings.ADMIN_PASSWORD:
+
+    sa = db.query(SuperAdmin).filter(SuperAdmin.username == username).first()
+    if sa is not None:
+        if not sa.is_active or not auth_service.verify_password(payload.password, sa.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid admin credentials")
+        token = auth_service.create_access_token({
+            "sub": sa.username,
+            "role": "super_admin",
+            "super_admin_id": sa.id,
+        })
+        return LoginResponse(
+            access_token=token,
+            role="super_admin",
+            username=sa.username,
+            full_name=sa.full_name or "Super Admin",
+        )
+
+    admin = db.query(Admin).filter(Admin.username == username).first()
+    if admin is None or not admin.is_active:
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+    if not auth_service.verify_password(payload.password, admin.password_hash):
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
     token = auth_service.create_access_token({
-        "sub": username,
+        "sub": admin.username,
         "role": "admin",
+        "admin_id": admin.id,
     })
-
     return LoginResponse(
         access_token=token,
         role="admin",
-        username=username,
-        full_name="Administrator",
+        admin_id=admin.id,
+        username=admin.username,
+        full_name=admin.full_name or "Administrator",
     )
 
 
@@ -112,6 +138,7 @@ def auth_me(principal: Annotated[dict, Depends(get_current_principal)]):
         role=principal["role"],
         user_id=principal.get("user_id"),
         manager_id=principal.get("manager_id"),
+        admin_id=principal.get("admin_id"),
         username=principal.get("sub"),
         full_name=principal.get("full_name"),
         pic_url=principal.get("pic_url"),
@@ -122,14 +149,29 @@ def auth_me(principal: Annotated[dict, Depends(get_current_principal)]):
 def refresh_token(principal: Annotated[dict, Depends(get_current_principal)]):
     """Issue a fresh access token for a still-valid session (same claims, new expiry)."""
     role = principal["role"]
+    if role == "super_admin":
+        token = auth_service.create_access_token({
+            "sub": principal.get("sub"),
+            "role": "super_admin",
+            "super_admin_id": principal.get("super_admin_id"),
+        })
+        return LoginResponse(
+            access_token=token,
+            role="super_admin",
+            username=principal.get("sub"),
+            full_name=principal.get("full_name") or "Super Admin",
+        )
+
     if role == "admin":
         token = auth_service.create_access_token({
             "sub": principal.get("sub"),
             "role": "admin",
+            "admin_id": principal.get("admin_id"),
         })
         return LoginResponse(
             access_token=token,
             role="admin",
+            admin_id=principal.get("admin_id"),
             username=principal.get("sub"),
             full_name=principal.get("full_name") or "Administrator",
             pic_url=principal.get("pic_url"),
@@ -140,12 +182,14 @@ def refresh_token(principal: Annotated[dict, Depends(get_current_principal)]):
         "role": role,
         "user_id": principal.get("user_id"),
         "manager_id": principal.get("manager_id"),
+        "admin_id": principal.get("admin_id"),
     })
     return LoginResponse(
         access_token=token,
         role=role,
         user_id=principal.get("user_id"),
         manager_id=principal.get("manager_id"),
+        admin_id=principal.get("admin_id"),
         username=principal.get("sub"),
         full_name=principal.get("full_name"),
         pic_url=principal.get("pic_url"),

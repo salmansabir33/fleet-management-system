@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from tracker_backend.models import FuelPrice
@@ -13,8 +14,19 @@ def _as_date(value) -> date:
     return date.fromisoformat(str(value)[:10])
 
 
+def _tenant_lane_filter(admin_id: int | None):
+    """Restrict queries to one price lane (global or one fleet)."""
+    if admin_id is None:
+        return FuelPrice.admin_id.is_(None)
+    return FuelPrice.admin_id == admin_id
+
+
 def upsert_fuel_price_with_reflow(
-    db: Session, fuel_type_id: int, price_per_liter: float, start_date: date
+    db: Session,
+    fuel_type_id: int,
+    price_per_liter: float,
+    start_date: date,
+    admin_id: int | None = None,
 ) -> FuelPrice:
     """Implements the RULE FOR ADDING/UPDATING A PRICE.
 
@@ -39,6 +51,7 @@ def upsert_fuel_price_with_reflow(
     created row). Commits the session before returning.
     """
     start_date = _as_date(start_date)
+    lane = _tenant_lane_filter(admin_id)
 
     # 1. Exact (fuel_type_id, start_date) match → price correction only.
     existing = (
@@ -46,6 +59,7 @@ def upsert_fuel_price_with_reflow(
         .filter(
             FuelPrice.fuel_type_id == fuel_type_id,
             FuelPrice.effective_date_start == start_date,
+            lane,
         )
         .first()
     )
@@ -61,6 +75,7 @@ def upsert_fuel_price_with_reflow(
         .filter(
             FuelPrice.fuel_type_id == fuel_type_id,
             FuelPrice.effective_date_start < start_date,
+            lane,
         )
         .order_by(FuelPrice.effective_date_start.desc())
         .first()
@@ -71,6 +86,7 @@ def upsert_fuel_price_with_reflow(
         .filter(
             FuelPrice.fuel_type_id == fuel_type_id,
             FuelPrice.effective_date_start > start_date,
+            lane,
         )
         .order_by(FuelPrice.effective_date_start.asc())
         .first()
@@ -85,6 +101,7 @@ def upsert_fuel_price_with_reflow(
         price_per_liter=price_per_liter,
         effective_date_start=start_date,
         effective_date_end=new_end,
+        admin_id=admin_id,
     )
     db.add(new_row)
 
@@ -118,12 +135,15 @@ def delete_fuel_price_with_reflow(db: Session, price_id: int) -> bool:
     if not row:
         return False
 
+    lane = _tenant_lane_filter(row.admin_id)
+
     # 1. Find the neighbours of the row being deleted.
     prev_row = (
         db.query(FuelPrice)
         .filter(
             FuelPrice.fuel_type_id == row.fuel_type_id,
             FuelPrice.effective_date_start < row.effective_date_start,
+            lane,
         )
         .order_by(FuelPrice.effective_date_start.desc())
         .first()
@@ -134,6 +154,7 @@ def delete_fuel_price_with_reflow(db: Session, price_id: int) -> bool:
         .filter(
             FuelPrice.fuel_type_id == row.fuel_type_id,
             FuelPrice.effective_date_start > row.effective_date_start,
+            lane,
         )
         .order_by(FuelPrice.effective_date_start.asc())
         .first()
@@ -150,33 +171,9 @@ def delete_fuel_price_with_reflow(db: Session, price_id: int) -> bool:
     return True
 
 
-def get_applicable_fuel_price(db: Session, fuel_type_id: int, on_date: date) -> float | None:
-    """Returns the price_per_liter whose [effective_date_start,
-    effective_date_end] range covers on_date for the given fuel type
-    (NULL end means "currently active, no newer price yet"). Returns
-    None if no price exists at all yet for this fuel type."""
-    if fuel_type_id is None:
-        return None
-    price_row = (
-        db.query(FuelPrice)
-        .filter(
-            FuelPrice.fuel_type_id == fuel_type_id,
-            FuelPrice.effective_date_start <= on_date,
-            (FuelPrice.effective_date_end.is_(None))
-            | (FuelPrice.effective_date_end >= on_date),
-        )
-        .order_by(FuelPrice.effective_date_start.desc())
-        .first()
-    )
-    return price_row.price_per_liter if price_row else None
-
-
-def get_applicable_fuel_price_row(db: Session, fuel_type_id: int, on_date: date):
-    """Same lookup as get_applicable_fuel_price but returns the full row
-    (or None), used where the effective_date_start of the price actually
-    used needs to be reported back, not just the number."""
-    if fuel_type_id is None:
-        return None
+def _price_row_for_lane(
+    db: Session, fuel_type_id: int, on_date: date, admin_id: int | None
+):
     return (
         db.query(FuelPrice)
         .filter(
@@ -184,7 +181,40 @@ def get_applicable_fuel_price_row(db: Session, fuel_type_id: int, on_date: date)
             FuelPrice.effective_date_start <= on_date,
             (FuelPrice.effective_date_end.is_(None))
             | (FuelPrice.effective_date_end >= on_date),
+            _tenant_lane_filter(admin_id),
         )
         .order_by(FuelPrice.effective_date_start.desc())
         .first()
     )
+
+
+def get_applicable_fuel_price(
+    db: Session, fuel_type_id: int, on_date: date, admin_id: int | None = None
+) -> float | None:
+    """Returns the price_per_liter whose [effective_date_start,
+    effective_date_end] range covers on_date for the given fuel type
+    (NULL end means "currently active, no newer price yet"). Returns
+    None if no price exists at all yet for this fuel type."""
+    if fuel_type_id is None:
+        return None
+    if admin_id is not None:
+        price_row = _price_row_for_lane(db, fuel_type_id, on_date, admin_id)
+        if price_row is not None:
+            return price_row.price_per_liter
+    price_row = _price_row_for_lane(db, fuel_type_id, on_date, None)
+    return price_row.price_per_liter if price_row else None
+
+
+def get_applicable_fuel_price_row(
+    db: Session, fuel_type_id: int, on_date: date, admin_id: int | None = None
+):
+    """Same lookup as get_applicable_fuel_price but returns the full row
+    (or None), used where the effective_date_start of the price actually
+    used needs to be reported back, not just the number."""
+    if fuel_type_id is None:
+        return None
+    if admin_id is not None:
+        row = _price_row_for_lane(db, fuel_type_id, on_date, admin_id)
+        if row is not None:
+            return row
+    return _price_row_for_lane(db, fuel_type_id, on_date, None)

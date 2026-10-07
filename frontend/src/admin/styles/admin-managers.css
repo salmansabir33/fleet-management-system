@@ -8,6 +8,17 @@
   overflow: hidden;
 }
 
+.amg-admin-filter.ft-sa-admin-filter--inline {
+  flex: 0 0 auto;
+  max-width: 220px;
+}
+
+.amg-admin-filter.ft-sa-admin-filter--inline .ft-sa-admin-filter__inline-select,
+.amg-admin-filter.ft-sa-admin-filter--inline .ft-select-trigger {
+  height: 40px !important;
+  min-height: 40px;
+}
+
 .amg-add-btn {
   display: inline-flex;
   align-items: center;
@@ -436,6 +447,16 @@
     flex: 1 1 auto;
     width: 100%;
     min-width: 0;
+  }
+
+  .amg-page .amg-admin-filter.ft-sa-admin-filter--inline {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .amg-page .amg-admin-filter.ft-sa-admin-filter--inline .ft-field {
+    width: 100%;
+    flex: 1;
   }
 
   /* Keep Add button visible (trips CSS hides .at-trips-toolbar-actions) */

@@ -16,7 +16,11 @@ import {
   ADMIN_NOTIFICATION_PREFS_EVENT,
 } from '../../utils/notificationDisplayPrefs'
 
-const NotificationSettings = () => {
+const NotificationSettings = ({
+  readOnly = false,
+  personalOnly = false,
+  detectionReadOnly = false,
+}) => {
   const { tokens } = useTheme()
   const [alertTypes, setAlertTypes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -59,6 +63,7 @@ const NotificationSettings = () => {
   }, [alertTypes])
 
   const patchAlertType = async (alertType, body, optimistic) => {
+    if (readOnly) return
     setSavingKey(alertType)
     setError(null)
     const previous = alertTypes
@@ -90,6 +95,13 @@ const NotificationSettings = () => {
     return <Card><LoadingState label="Loading alert types…" /></Card>
   }
 
+  const browserCardTitle = personalOnly
+    ? 'This browser (super admin topbar)'
+    : 'This browser (admin topbar)'
+  const browserCardHint = personalOnly
+    ? 'Filters the super admin notification bell on this browser only. Not stored in the database and does not affect fleet admins.'
+    : 'Filters the admin notification bell on this browser only. Not a person and not stored in the database.'
+
   return (
     <div>
       {error && (
@@ -104,66 +116,71 @@ const NotificationSettings = () => {
         </div>
       )}
 
-      <Card title="Manager notification options">
-        <p className="ft-admin-settings-card-hint">
-          Available chooses which alert types appear when you assign notifications to a manager.
-          Turning Available off hides the type and removes it from every manager immediately.
-          Detection still turns fleet-wide generation on or off.
-        </p>
-        {alertTypes.length === 0 ? (
-          <EmptyState title="No alert types configured." />
-        ) : (
-          <div className="ft-settings-switch-list">
-            {alertTypes.map((row) => (
-              <div key={row.alert_type} className="ft-settings-switch-row">
-                <div className="ft-settings-switch-copy">
-                  <div className="ft-settings-switch-label">
-                    {ALERT_TYPE_LABELS[row.alert_type] || row.alert_type}
+      {!personalOnly && (
+        <Card title="Manager notification options">
+          <p className="ft-admin-settings-card-hint">
+            {readOnly
+              ? 'Alert types available when assigning notifications to managers in this fleet.'
+              : 'Available chooses which alert types appear when you assign notifications to a manager in this fleet. Turning Available off hides the type and removes it from this fleet’s managers immediately. Detection is platform-wide and cannot be changed here.'}
+          </p>
+          {alertTypes.length === 0 ? (
+            <EmptyState title="No alert types configured." />
+          ) : (
+            <div className="ft-settings-switch-list">
+              {alertTypes.map((row) => (
+                <div key={row.alert_type} className="ft-settings-switch-row">
+                  <div className="ft-settings-switch-copy">
+                    <div className="ft-settings-switch-label">
+                      {ALERT_TYPE_LABELS[row.alert_type] || row.alert_type}
+                    </div>
+                    <div className="ft-settings-switch-desc">{row.alert_type}</div>
                   </div>
-                  <div className="ft-settings-switch-desc">{row.alert_type}</div>
+                  <div className="ft-settings-role-switches">
+                    <div className="ft-settings-role-switch">
+                      <span>Available</span>
+                      <Switch
+                        checked={row.offered_to_managers !== false}
+                        disabled={readOnly || savingKey === row.alert_type}
+                        onChange={(e) => patchAlertType(
+                          row.alert_type,
+                          { offered_to_managers: e.target.checked },
+                          { offered_to_managers: e.target.checked },
+                        )}
+                        aria-label={`Offer ${row.alert_type} to managers`}
+                      />
+                    </div>
+                    <div className="ft-settings-role-switch">
+                      <span>Detection</span>
+                      <Switch
+                        checked={row.is_enabled}
+                        disabled={readOnly || detectionReadOnly || savingKey === row.alert_type}
+                        onChange={(e) => patchAlertType(
+                          row.alert_type,
+                          { is_enabled: e.target.checked },
+                          { is_enabled: e.target.checked },
+                        )}
+                        aria-label={`Toggle detection for ${row.alert_type}`}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="ft-settings-role-switches">
-                  <div className="ft-settings-role-switch">
-                    <span>Available</span>
-                    <Switch
-                      checked={row.offered_to_managers !== false}
-                      disabled={savingKey === row.alert_type}
-                      onChange={(e) => patchAlertType(
-                        row.alert_type,
-                        { offered_to_managers: e.target.checked },
-                        { offered_to_managers: e.target.checked },
-                      )}
-                      aria-label={`Offer ${row.alert_type} to managers`}
-                    />
-                  </div>
-                  <div className="ft-settings-role-switch">
-                    <span>Detection</span>
-                    <Switch
-                      checked={row.is_enabled}
-                      disabled={savingKey === row.alert_type}
-                      onChange={(e) => patchAlertType(
-                        row.alert_type,
-                        { is_enabled: e.target.checked },
-                        { is_enabled: e.target.checked },
-                      )}
-                      aria-label={`Toggle detection for ${row.alert_type}`}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
-      <Card title="This browser (admin topbar)" className="ft-settings-footer-card">
+      <Card
+        title={browserCardTitle}
+        className={personalOnly ? undefined : 'ft-settings-footer-card'}
+      >
         <p className="ft-admin-settings-card-hint">
-          Filters the admin notification bell on this browser only. Not a person and not stored in the database.
+          {browserCardHint}
         </p>
         {alertTypes.length === 0 ? (
           <EmptyState title="No alert types configured." />
         ) : (
-          <div className="ft-settings-switch-list" style={{ maxHeight: 280 }}>
+          <div className="ft-settings-switch-list" style={{ maxHeight: personalOnly ? undefined : 280 }}>
             {alertTypes.map((row) => (
               <div key={row.alert_type} className="ft-settings-switch-row">
                 <div className="ft-settings-switch-copy">

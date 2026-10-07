@@ -23,6 +23,8 @@ import { MobilePageHeading } from '../../shared/shell'
 import { adminNavLabel } from '../navItems'
 import { deriveVehicleStatus } from '../../user/utils/vehicleStatus'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import '../styles/admin-geofences.css'
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY
@@ -399,6 +401,7 @@ const GeofencesPage = () => {
   const { tokens } = useTheme()
   const styles = useMemo(() => makeGeofenceStyles(tokens), [tokens])
   const { isManager, can, apiFor } = usePanelScope()
+  const saListParams = useSaAdminListParams()
   const canManage = can('geofence')
   const canLive = can('live_tracking')
   const [geofences, setGeofences] = useState([])
@@ -439,12 +442,12 @@ const GeofencesPage = () => {
 
   const loadGeofences = useCallback(async () => {
     try {
-      const res = await api.get(apiFor('/geofences', '/api/geofences'))
+      const res = await api.get(apiFor('/geofences', '/api/geofences'), { params: saListParams })
       setGeofences(res.data || [])
     } catch (err) {
       console.error('Failed to load geofences:', err)
     }
-  }, [apiFor])
+  }, [apiFor, saListParams])
 
   const loadDevices = useCallback(async () => {
     try {
@@ -771,6 +774,7 @@ const GeofencesPage = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <AdminFilterBar inline className="ft-geofences-admin-filter" />
         {canManage && (
           <Button className="ft-geofences-toolbar__add" onClick={openCreate}>
             <Plus size={16} />

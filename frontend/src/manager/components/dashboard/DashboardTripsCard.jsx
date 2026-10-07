@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Upload } from 'lucide-react'
 import { useTheme } from '../../../theme'
@@ -11,7 +11,6 @@ import {
   Badge,
   FilterBar,
   EmptyState,
-  Pagination,
 } from '../../../shared/components'
 import { usePanelScope } from '../../hooks/usePanelScope'
 import { fmtTime, formatDuration, fmtNum } from '../../utils/dashboardFormatters'
@@ -22,36 +21,15 @@ const STATUS_FILTERS = [
   { key: 'completed', label: 'Completed' },
 ]
 
-const TRIPS_PAGE_SIZE = 5
-/** Shell / layout mobile breakpoint */
-const MOBILE_MQ = '(max-width: 820px)'
-
 const DashboardTripsCard = ({ trips, canTrips, loading = false }) => {
   const { tokens } = useTheme()
   const { basePath } = usePanelScope()
   const [statusFilter, setStatusFilter] = useState('all')
-  const [page, setPage] = useState(1)
-  const [isMobile, setIsMobile] = useState(() => (
-    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false
-  ))
-
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_MQ)
-    const sync = () => setIsMobile(mq.matches)
-    sync()
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
-  }, [])
 
   const filtered = useMemo(() => trips.filter((trip) => {
     if (statusFilter === 'all') return true
     return trip.status === statusFilter
   }), [trips, statusFilter])
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / TRIPS_PAGE_SIZE))
-  const listItems = isMobile
-    ? filtered
-    : filtered.slice((page - 1) * TRIPS_PAGE_SIZE, page * TRIPS_PAGE_SIZE)
 
   return (
     <Card
@@ -76,14 +54,14 @@ const DashboardTripsCard = ({ trips, canTrips, loading = false }) => {
         <FilterBar
           options={STATUS_FILTERS}
           value={statusFilter}
-          onChange={(v) => { setStatusFilter(v); setPage(1) }}
+          onChange={setStatusFilter}
         />
       </div>
 
       {!canTrips ? (
         <EmptyState title="Not permitted" description="Trip history access is required." />
       ) : loading || filtered.length > 0 ? (
-        <>
+        <div style={{ maxHeight: 360, overflow: 'auto' }}>
           <Table
             loading={loading}
             columns={[
@@ -97,7 +75,7 @@ const DashboardTripsCard = ({ trips, canTrips, loading = false }) => {
               { key: 'status', label: 'Status' },
             ]}
           >
-            {listItems.map((trip, idx) => {
+            {filtered.map((trip, idx) => {
               const completed = trip.status === 'completed'
               const statusColor = completed ? tokens.semantic.success : tokens.semantic.warning
               return (
@@ -118,12 +96,7 @@ const DashboardTripsCard = ({ trips, canTrips, loading = false }) => {
               )
             })}
           </Table>
-          {!isMobile && pageCount > 1 && !loading && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-              <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
-            </div>
-          )}
-        </>
+        </div>
       ) : (
         <EmptyState title="No trips" description="No trips match your filters for this period." />
       )}

@@ -320,7 +320,13 @@ def _route_for_matching(db: Session, trip: Trip) -> Route | None:
     """Confirmed route wins; otherwise the assignment covering trip start."""
     confirmed_id = getattr(trip, "confirmed_route_id", None)
     if confirmed_id is not None:
-        return db.query(Route).filter(Route.id == confirmed_id).first()
+        route = db.query(Route).filter(Route.id == confirmed_id).first()
+        if route is None:
+            return None
+        device = db.query(Device).filter(Device.id == trip.device_id).first()
+        if device is not None and route.admin_id != device.admin_id:
+            return None
+        return route
 
     assignment = (
         db.query(RouteVehicle)
@@ -334,7 +340,13 @@ def _route_for_matching(db: Session, trip: Trip) -> Route | None:
     )
     if assignment is None:
         return None
-    return db.query(Route).filter(Route.id == assignment.route_id).first()
+    route = db.query(Route).filter(Route.id == assignment.route_id).first()
+    if route is None:
+        return None
+    device = db.query(Device).filter(Device.id == trip.device_id).first()
+    if device is not None and route.admin_id != device.admin_id:
+        return None
+    return route
 
 
 def match_trip_to_routes(db: Session, trip: Trip) -> None:

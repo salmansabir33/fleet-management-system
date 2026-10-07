@@ -9,6 +9,7 @@ import {
   Gauge,
   Navigation,
   Route,
+  Shield,
   Wallet,
   Wrench,
 } from 'lucide-react'
@@ -27,6 +28,11 @@ import AdminTrendChart, {
   FLEET_FUEL_COST_SERIES,
 } from '../components/AdminTrendChart'
 import AdminDashboardMap from '../components/AdminDashboardMap'
+import AdminFilterBar from '../components/AdminFilterBar'
+import {
+  useSaAdminListParams,
+  useShowSaAdminFilter,
+} from '../hooks/useSaAdminListParams'
 import {
   TREND_PERIODS,
   isInDashboardPeriod,
@@ -77,11 +83,16 @@ const AdminDashboard = () => {
   const { tokens } = useTheme()
   const navigate = useNavigate()
   const isDesktop = useMediaQuery('(min-width: 821px)')
+  const saListParams = useSaAdminListParams()
+  const saAdminId = saListParams.admin_id ?? null
+  const showSaAdminFilter = useShowSaAdminFilter()
 
   const [live, setLive] = useState([])
   const [adminSummary, setAdminSummary] = useState(null)
   const [alertSummary, setAlertSummary] = useState(null)
   const [trendPoints, setTrendPoints] = useState([])
+  const [adminsCount, setAdminsCount] = useState(null)
+  const [adminsLoading, setAdminsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [alertsLoading, setAlertsLoading] = useState(true)
@@ -101,7 +112,35 @@ const AdminDashboard = () => {
   )
 
   useEffect(() => {
-    let cancelled = false
+    if (!showSaAdminFilter) {
+      setAdminsCount(null)
+      setAdminsLoading(false)
+      return undefined
+    }
+
+    let active = true
+    setAdminsLoading(true)
+
+    const loadAdmins = async () => {
+      try {
+        const res = await api.get('/api/super-admin/admins')
+        if (!active) return
+        const rows = Array.isArray(res.data) ? res.data : []
+        setAdminsCount(rows.filter((row) => row.is_active).length)
+      } catch (err) {
+        console.error('Failed to load admins count:', err)
+        if (active) setAdminsCount(null)
+      } finally {
+        if (active) setAdminsLoading(false)
+      }
+    }
+
+    loadAdmins()
+    return () => { active = false }
+  }, [showSaAdminFilter])
+
+  useEffect(() => {
+    let active = true
 
     const loadLive = async () => {
       try {
@@ -109,7 +148,7 @@ const AdminDashboard = () => {
           const dashRes = await api.get(apiFor('/dashboard', '/api/live'), {
             params: { compact: true, period: dashboardPeriod },
           })
-          if (cancelled) return
+          if (!active) return
           setLive(Array.isArray(dashRes.data.live) ? dashRes.data.live : [])
           if (dashRes.data.summary != null) {
             setAdminSummary(dashRes.data.summary)
@@ -117,20 +156,29 @@ const AdminDashboard = () => {
           }
         } else {
           const liveRes = await api.get('/api/live', { params: { compact: true } })
-          if (cancelled) return
-          setLive(liveRes.data.live || [])
+          if (!active) return
+          let rows = liveRes.data.live || []
+          if (saAdminId != null) {
+            const devRes = await api.get('/api/fleet/devices', {
+              params: { admin_id: saAdminId },
+            })
+            if (!active) return
+            const allowed = new Set((devRes.data || []).map((d) => d.id))
+            rows = rows.filter((row) => allowed.has(row.db_id))
+          }
+          setLive(rows)
         }
       } catch (err) {
         console.error('Failed to load dashboard live feed:', err)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
     loadLive()
     const interval = setInterval(loadLive, 10000)
-    return () => { cancelled = true; clearInterval(interval) }
-  }, [isManager, apiFor, dashboardPeriod])
+    return () => { active = false; clearInterval(interval) }
+  }, [isManager, apiFor, dashboardPeriod, saAdminId])
 
   useEffect(() => {
     if (isManager) return undefined
@@ -139,26 +187,29 @@ const AdminDashboard = () => {
       return undefined
     }
 
-    let cancelled = false
+    let active = true
     setSummaryLoading(true)
 
     const loadSummary = async () => {
       try {
         const summaryRes = await api.get('/api/admin/dashboard/summary', {
-          params: { period: dashboardPeriod },
+          params: {
+            period: dashboardPeriod,
+            ...(saAdminId != null ? { admin_id: saAdminId } : {}),
+          },
         })
-        if (cancelled) return
-        setAdminSummary(summaryRes.data)
+        if (!active) return
+        setAdminSummary(summaryRes.data ?? null)
       } catch (err) {
         console.error('Failed to load dashboard summary:', err)
       } finally {
-        if (!cancelled) setSummaryLoading(false)
+        if (active) setSummaryLoading(false)
       }
     }
 
     loadSummary()
-    return () => { cancelled = true }
-  }, [isManager, canReports, canMaintenance, canDrivers, dashboardPeriod])
+    return () => { active = false }
+  }, [isManager, canReports, canMaintenance, canDrivers, dashboardPeriod, saAdminId])
 
   useEffect(() => {
     if (!canAlerts) {
@@ -167,7 +218,7 @@ const AdminDashboard = () => {
       return undefined
     }
 
-    let cancelled = false
+    let active = true
     setAlertsLoading(true)
 
     const loadAlerts = async () => {
@@ -176,24 +227,27 @@ const AdminDashboard = () => {
           const res = await api.get(apiFor('/alerts', '/api/alerts'), {
             params: { limit: 200 },
           })
-          if (!cancelled) setAlertSummary(summarizeAlerts(res.data, dashboardPeriod))
+          if (active) setAlertSummary(summarizeAlerts(res.data, dashboardPeriod))
         } else {
           const res = await api.get('/api/alerts/summary', {
-            params: { period: dashboardPeriod },
+            params: {
+              period: dashboardPeriod,
+              ...(saAdminId != null ? { admin_id: saAdminId } : {}),
+            },
           })
-          if (!cancelled) setAlertSummary(res.data)
+          if (active) setAlertSummary(res.data ?? null)
         }
       } catch (err) {
         console.error('Failed to load alerts summary:', err)
-        if (!cancelled) setAlertSummary(null)
+        if (active) setAlertSummary(null)
       } finally {
-        if (!cancelled) setAlertsLoading(false)
+        if (active) setAlertsLoading(false)
       }
     }
 
     loadAlerts()
-    return () => { cancelled = true }
-  }, [apiFor, canAlerts, isManager, dashboardPeriod])
+    return () => { active = false }
+  }, [apiFor, canAlerts, isManager, dashboardPeriod, saAdminId])
 
   useEffect(() => {
     if (!canViewTrips) {
@@ -202,29 +256,34 @@ const AdminDashboard = () => {
       return undefined
     }
 
-    let cancelled = false
+    let active = true
     setTrendLoading(true)
 
     const loadTrend = async () => {
       try {
         const res = await api.get(
           apiFor('/dashboard/trends', '/api/admin/dashboard/trends'),
-          { params: { period: dashboardPeriod } },
+          {
+            params: {
+              period: dashboardPeriod,
+              ...(saAdminId != null ? { admin_id: saAdminId } : {}),
+            },
+          },
         )
-        if (!cancelled) {
+        if (active) {
           setTrendPoints(Array.isArray(res.data?.points) ? res.data.points : [])
         }
       } catch (err) {
         console.error('Failed to load fleet trends:', err)
-        if (!cancelled) setTrendPoints([])
+        if (active) setTrendPoints([])
       } finally {
-        if (!cancelled) setTrendLoading(false)
+        if (active) setTrendLoading(false)
       }
     }
 
     loadTrend()
-    return () => { cancelled = true }
-  }, [apiFor, canViewTrips, dashboardPeriod])
+    return () => { active = false }
+  }, [apiFor, canViewTrips, dashboardPeriod, saAdminId])
 
   const statusCounts = useMemo(() => {
     const counts = { moving: 0, idle: 0, stopped: 0, offline: 0 }
@@ -260,21 +319,24 @@ const AdminDashboard = () => {
   const showDesktopMap = canLive && isDesktop
   const chartFill = showDesktopMap
 
-  const periodFilter = (
-    <div className="ft-admin-period-filter">
-      <span className="ft-admin-period-filter__icon" aria-hidden>
-        <Calendar size={15} strokeWidth={2.25} />
-      </span>
-      <Select
-        value={dashboardPeriod}
-        onChange={(e) => setDashboardPeriod(e.target.value)}
-        className="ft-admin-period-filter__select"
-        aria-label="Dashboard period"
-      >
-        {TREND_PERIODS.map((p) => (
-          <option key={p.key} value={p.key}>{p.label}</option>
-        ))}
-      </Select>
+  const headerFilters = (
+    <div className="ft-admin-dashboard-filters">
+      {showSaAdminFilter && <AdminFilterBar compact />}
+      <div className="ft-admin-period-filter">
+        <span className="ft-admin-period-filter__icon" aria-hidden>
+          <Calendar size={15} strokeWidth={2.25} />
+        </span>
+        <Select
+          value={dashboardPeriod}
+          onChange={(e) => setDashboardPeriod(e.target.value)}
+          className="ft-admin-period-filter__select"
+          aria-label="Dashboard period"
+        >
+          {TREND_PERIODS.map((p) => (
+            <option key={p.key} value={p.key}>{p.label}</option>
+          ))}
+        </Select>
+      </div>
     </div>
   )
 
@@ -319,7 +381,7 @@ const AdminDashboard = () => {
     <div className="ft-page-stack ft-admin-dashboard">
       <PageHeader
         title={isManager ? 'Manager Dashboard' : 'Admin Dashboard'}
-        actions={periodFilter}
+        actions={headerFilters}
       />
 
       <div className="ft-kpi-row ft-kpi-row--wrap">
@@ -417,7 +479,17 @@ const AdminDashboard = () => {
             }
           />
         )}
-        {canReports && (
+        {showSaAdminFilter ? (
+          <KpiStatCard
+            label="Admins"
+            value={adminsCount == null ? '—' : fmtNum(adminsCount)}
+            icon={Shield}
+            tone="brand"
+            loading={adminsLoading}
+            interactive
+            onClick={() => navigate(`${basePath}/admins`)}
+          />
+        ) : canReports ? (
           <KpiStatCard
             label={kpiLabels.trips}
             value={tripsToday == null ? '—' : fmtNum(tripsToday)}
@@ -427,7 +499,7 @@ const AdminDashboard = () => {
             interactive={canViewTrips}
             onClick={canViewTrips ? () => navigate(tripsPath) : undefined}
           />
-        )}
+        ) : null}
       </div>
 
       {showDesktopMap ? (

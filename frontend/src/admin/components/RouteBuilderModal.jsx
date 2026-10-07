@@ -7,6 +7,9 @@ import api from '../../api'
 import { Modal, Input, Button, Tabs } from '../../shared/components'
 import { useTheme } from '../../theme'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useAuth } from '../../auth/AuthContext'
+import { readActingAdminId } from '../../auth/actingAdminStorage'
+import SuperAdminFleetSelect from './SuperAdminFleetSelect'
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
@@ -262,6 +265,9 @@ const PathBendLayer = ({ previewPath, waypoints, onInsert, suppressClickRef }) =
 const RouteBuilderModal = ({ onClose, onSaved, editRouteId }) => {
   const { tokens } = useTheme()
   const { isManager, apiFor, can } = usePanelScope()
+  const { role } = useAuth()
+  const [targetAdminId, setTargetAdminId] = useState('')
+  const saGlobalCreate = role === 'super_admin' && readActingAdminId() == null
   const isEdit = editRouteId != null
   const [name, setName] = useState('')
   const [directionLabel, setDirectionLabel] = useState('')
@@ -480,6 +486,11 @@ const RouteBuilderModal = ({ onClose, onSaved, editRouteId }) => {
       setMobilePane('map')
       return
     }
+    if (saGlobalCreate && !isEdit && !targetAdminId) {
+      setError('Select a fleet admin for this route.')
+      setMobilePane('details')
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -489,6 +500,9 @@ const RouteBuilderModal = ({ onClose, onSaved, editRouteId }) => {
         direction_label: directionLabel.trim() || null,
         tolerance_meters: Number(toleranceMeters) || 400,
         waypoints,
+      }
+      if (saGlobalCreate && !isEdit && targetAdminId) {
+        payload.admin_id = Number(targetAdminId)
       }
 
       if (isEdit) {
@@ -808,6 +822,14 @@ const RouteBuilderModal = ({ onClose, onSaved, editRouteId }) => {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Depot to Multan"
               />
+
+              {saGlobalCreate && !isEdit && (
+                <SuperAdminFleetSelect
+                  required
+                  value={targetAdminId}
+                  onChange={(e) => setTargetAdminId(e.target.value)}
+                />
+              )}
 
               <Input
                 label="Direction Label"

@@ -17,6 +17,8 @@ import {
 import { MobilePageHeading } from '../../shared/shell'
 import { adminNavLabel } from '../navItems'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import { TRIP_PERIODS, tripPeriodToParams } from '../utils/tripPeriod'
 import TripDriverConfirmCell, {
   tripDisplayDriverName,
@@ -364,6 +366,7 @@ const Field = ({ label, value, className }) => {
 
 const AdminTrips = () => {
   const { apiFor, can } = usePanelScope()
+  const saListParams = useSaAdminListParams()
   const canViewTrips = can('trip_history')
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
@@ -391,7 +394,7 @@ const AdminTrips = () => {
     }
     const controller = new AbortController()
     setLoading(true)
-    const params = { ...tripPeriodToParams(periodFilter) }
+    const params = { ...tripPeriodToParams(periodFilter), ...saListParams }
 
     api.get(apiFor('/trips', '/api/trips'), { params, signal: controller.signal })
       .then((res) => {
@@ -413,7 +416,7 @@ const AdminTrips = () => {
       })
 
     return () => controller.abort()
-  }, [periodFilter, apiFor, canViewTrips])
+  }, [periodFilter, apiFor, canViewTrips, saListParams])
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_CARDS_MQ)
@@ -830,6 +833,8 @@ const AdminTrips = () => {
               )}
             </button>
           </div>
+
+          <AdminFilterBar inline className="at-trips-admin-filter" />
 
           <div className="at-trips-toolbar-actions">
             <button

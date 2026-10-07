@@ -117,6 +117,17 @@
   font-size: 9px;
 }
 
+.at-trips-admin-filter.ft-sa-admin-filter--inline {
+  flex: 0 0 auto;
+  max-width: 220px;
+}
+
+.at-trips-admin-filter.ft-sa-admin-filter--inline .ft-sa-admin-filter__inline-select,
+.at-trips-admin-filter.ft-sa-admin-filter--inline .ft-select-trigger {
+  height: 40px !important;
+  min-height: 40px;
+}
+
 .at-trips-toolbar-actions {
   display: flex;
   align-items: center;
@@ -1599,10 +1610,21 @@
   }
 
   .at-trips-search {
-    flex: 1 1 100%;
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
     min-width: 0;
     padding-right: 8px;
+  }
+
+  .at-trips-admin-filter.ft-sa-admin-filter--inline {
+    flex: 1 1 100%;
+    order: 3;
+    max-width: none;
+  }
+
+  .at-trips-admin-filter.ft-sa-admin-filter--inline .ft-field {
+    width: 100%;
+    flex: 1;
   }
 
   .at-trips-filters-icon-btn {

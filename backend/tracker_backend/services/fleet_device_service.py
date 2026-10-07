@@ -5,8 +5,64 @@ from sqlalchemy.orm import Session
 
 from tracker_backend.models import Device, Manager, User
 from tracker_backend.services import manager_service
+from tracker_backend.services import user_service
+from tracker_backend.services.tenant_service import set_user_admin_id
 from tracker_backend.services.traccar import traccar_service
 from tracker_backend.services.uploads import delete_upload, save_upload
+
+
+def claim_device(
+    db: Session,
+    device: Device,
+    *,
+    user_id: int | None = None,
+    create_user=None,
+    admin_id: int | None = None,
+    name: str | None = None,
+) -> Device:
+    """Pair an ownerless device with an existing or newly created user."""
+    if device.user_id is not None:
+        raise HTTPException(status_code=400, detail="Device already has an owner")
+
+    has_user = user_id is not None
+    has_create = create_user is not None
+    if has_user == has_create:
+        raise HTTPException(
+            status_code=400,
+            detail="Exactly one of user_id or create_user is required",
+        )
+
+    if create_user is not None:
+        owner = user_service.create_user_row(
+            db,
+            username=create_user.username,
+            password=create_user.password,
+            full_name=getattr(create_user, "full_name", None),
+            phone_number=getattr(create_user, "phone_number", None),
+            admin_id=admin_id,
+            commit=False,
+        )
+    else:
+        owner = db.query(User).filter(User.id == user_id).first()
+        if owner is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        clash = db.query(Device).filter(Device.user_id == owner.id).first()
+        if clash is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="This user already owns a vehicle — each user can own at most one.",
+            )
+        if admin_id is not None and owner.admin_id != admin_id:
+            set_user_admin_id(db, owner, admin_id)
+
+    device.user_id = owner.id
+    device.admin_id = owner.admin_id if owner.admin_id is not None else admin_id
+    if name is not None:
+        device.name = name
+
+    db.commit()
+    db.refresh(device)
+    return device
 
 
 async def delete_fleet_device_cascade(db: Session, device: Device) -> dict:

@@ -20,7 +20,9 @@ const PermissionsModal = ({ manager, onClose, onSaved }) => {
     const load = async () => {
       try {
         const res = await api.get('/api/settings/permissions')
-        if (!cancelled) setCatalog(res.data || [])
+        if (!cancelled) {
+          setCatalog((res.data || []).filter((row) => row.is_active !== false))
+        }
       } catch (err) {
         console.error('Failed to load permission keys:', err)
       } finally {

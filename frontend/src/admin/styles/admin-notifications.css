@@ -21,6 +21,36 @@
   gap: 0;
 }
 
+.ft-admin-alerts-feed-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ft-admin-alerts-admin-filter.ft-sa-admin-filter--inline {
+  max-width: 220px;
+}
+
+@media (max-width: 820px) {
+  .ft-admin-alerts-feed-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .ft-admin-alerts-admin-filter.ft-sa-admin-filter--inline {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .ft-admin-alerts-admin-filter.ft-sa-admin-filter--inline .ft-field {
+    width: 100%;
+    flex: 1;
+  }
+}
+
 /* Notifications — fleet alerts fill remaining viewport */
 .ft-admin-notifications-page .ft-admin-alerts-feed-card {
   flex: 1;

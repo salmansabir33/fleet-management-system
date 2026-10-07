@@ -14,13 +14,16 @@ const ProtectedRoute = ({ roles, children }) => {
     )
   }
 
-  const loginPath = location.pathname.startsWith('/admin') ? '/admin/login' : '/login'
+  const loginPath = (
+    location.pathname.startsWith('/admin') || location.pathname.startsWith('/super-admin')
+  ) ? '/admin/login' : '/login'
 
   if (!isAuthenticated) {
     return <Navigate to={loginPath} replace state={{ from: location.pathname }} />
   }
 
   if (roles && roles.length > 0 && !roles.includes(role)) {
+    if (role === 'super_admin') return <Navigate to="/super-admin/dashboard" replace />
     if (role === 'admin') return <Navigate to="/admin/dashboard" replace />
     if (role === 'manager' && managerId) return <Navigate to={`/manager/${managerId}/dashboard`} replace />
     return <Navigate to="/user/dashboard" replace />

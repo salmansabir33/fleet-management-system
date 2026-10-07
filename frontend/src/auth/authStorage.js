@@ -39,4 +39,10 @@ export const writeAuthState = (state) => {
 export const clearAuth = () => {
   writeToken(null)
   writeAuthState(null)
+  try {
+    sessionStorage.removeItem('ft.actingAdminId')
+    sessionStorage.removeItem('ft.actingAdminLabel')
+  } catch {
+    // ignore
+  }
 }

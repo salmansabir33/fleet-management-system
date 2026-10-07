@@ -2,11 +2,22 @@
 
 Keeps the admin Settings page complete even when new keys are added in
 code before a dedicated Alembic migration runs.
+
+Fleet offerings (AdminPermissionOffering / AdminAlertOffering) overlay
+the global master catalogs so each admin controls what their managers
+can be offered. Missing overlay rows default to offered=True.
 """
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
-from tracker_backend.models import AlertTypeSetting, Manager, PermissionDefinition
+from tracker_backend.models import (
+    AdminAlertOffering,
+    AdminPermissionOffering,
+    AlertTypeSetting,
+    Manager,
+    PermissionDefinition,
+    User,
+)
 
 # Mirrors keys enforced in manager_panel*, deps, and the manager UI.
 KNOWN_PERMISSION_DEFINITIONS = [
@@ -117,46 +128,149 @@ def default_user_permissions(db: Session) -> dict[str, bool]:
     return {row.key: True for row in rows}
 
 
-def default_bell_prefs(db: Session, role: str) -> dict[str, bool]:
+def permission_offering_map(db: Session, admin_id: int) -> dict[str, bool]:
+    """permission_key -> is_offered. Missing keys default to True at call sites."""
+    rows = (
+        db.query(AdminPermissionOffering)
+        .filter(AdminPermissionOffering.admin_id == admin_id)
+        .all()
+    )
+    return {row.permission_key: bool(row.is_offered) for row in rows}
+
+
+def alert_offering_map(db: Session, admin_id: int) -> dict[str, bool]:
+    """alert_type -> offered_to_managers. Missing keys default to True at call sites."""
+    rows = (
+        db.query(AdminAlertOffering)
+        .filter(AdminAlertOffering.admin_id == admin_id)
+        .all()
+    )
+    return {row.alert_type: bool(row.offered_to_managers) for row in rows}
+
+
+def is_permission_offered(db: Session, admin_id: int | None, key: str, *, global_active: bool = True) -> bool:
+    if not global_active:
+        return False
+    if admin_id is None:
+        return True
+    overlay = permission_offering_map(db, admin_id)
+    if key not in overlay:
+        return True
+    return overlay[key]
+
+
+def is_alert_offered(db: Session, admin_id: int | None, alert_type: str, *, global_offered: bool = True) -> bool:
+    if not global_offered:
+        return False
+    if admin_id is None:
+        return True
+    overlay = alert_offering_map(db, admin_id)
+    if alert_type not in overlay:
+        return True
+    return overlay[alert_type]
+
+
+def default_bell_prefs(db: Session, role: str, admin_id: int | None = None) -> dict[str, bool]:
     """Seed notification_prefs for a new manager or user.
 
-    Managers get every type currently offered_to_managers (all on).
+    Managers get every type currently offered for their fleet (all on).
     Users still follow default_user_bell.
     """
     ensure_alert_type_settings(db)
     rows = db.query(AlertTypeSetting).all()
     if role == "user":
         return {row.alert_type: bool(row.default_user_bell) for row in rows}
-    return {row.alert_type: True for row in rows if row.offered_to_managers}
+    return {
+        row.alert_type: True
+        for row in rows
+        if is_alert_offered(db, admin_id, row.alert_type, global_offered=bool(row.offered_to_managers))
+    }
 
 
-def active_permission_keys(db: Session) -> set[str]:
+def active_permission_keys(db: Session, admin_id: int | None = None) -> set[str]:
     ensure_permission_definitions(db)
     rows = (
-        db.query(PermissionDefinition.key)
+        db.query(PermissionDefinition)
         .filter(PermissionDefinition.is_active.is_(True))
         .all()
     )
-    return {row.key for row in rows}
+    return {
+        row.key
+        for row in rows
+        if is_permission_offered(db, admin_id, row.key, global_active=True)
+    }
 
 
-def offered_alert_types(db: Session) -> set[str]:
+def offered_alert_types(db: Session, admin_id: int | None = None) -> set[str]:
     ensure_alert_type_settings(db)
-    rows = (
-        db.query(AlertTypeSetting.alert_type)
-        .filter(AlertTypeSetting.offered_to_managers.is_(True))
-        .all()
+    rows = db.query(AlertTypeSetting).all()
+    return {
+        row.alert_type
+        for row in rows
+        if is_alert_offered(db, admin_id, row.alert_type, global_offered=bool(row.offered_to_managers))
+    }
+
+
+def set_permission_offered(db: Session, admin_id: int, permission_key: str, offered: bool) -> AdminPermissionOffering:
+    row = (
+        db.query(AdminPermissionOffering)
+        .filter(
+            AdminPermissionOffering.admin_id == admin_id,
+            AdminPermissionOffering.permission_key == permission_key,
+        )
+        .first()
     )
-    return {row.alert_type for row in rows}
+    if row is None:
+        row = AdminPermissionOffering(
+            admin_id=admin_id,
+            permission_key=permission_key,
+            is_offered=offered,
+        )
+        db.add(row)
+    else:
+        row.is_offered = offered
+    return row
 
 
-def revoke_permission_from_managers(db: Session, key: str) -> None:
-    """Force key=false on every manager. Does not commit — caller does."""
+def set_alert_offered(db: Session, admin_id: int, alert_type: str, offered: bool) -> AdminAlertOffering:
+    row = (
+        db.query(AdminAlertOffering)
+        .filter(
+            AdminAlertOffering.admin_id == admin_id,
+            AdminAlertOffering.alert_type == alert_type,
+        )
+        .first()
+    )
+    if row is None:
+        row = AdminAlertOffering(
+            admin_id=admin_id,
+            alert_type=alert_type,
+            offered_to_managers=offered,
+        )
+        db.add(row)
+    else:
+        row.offered_to_managers = offered
+    return row
+
+
+def _managers_for_fleet(db: Session, admin_id: int | None) -> list[Manager]:
     from sqlalchemy import inspect
     if not inspect(db.bind).has_table("managers"):
-        return
-    managers = db.query(Manager).all()
-    for manager in managers:
+        return []
+    if admin_id is None:
+        return db.query(Manager).all()
+    user_ids = [
+        row.id
+        for row in db.query(User.id).filter(User.admin_id == admin_id).all()
+    ]
+    if not user_ids:
+        return []
+    return db.query(Manager).filter(Manager.user_id.in_(user_ids)).all()
+
+
+def revoke_permission_from_managers(db: Session, key: str, admin_id: int | None = None) -> None:
+    """Force key=false on managers (optionally one fleet). Does not commit."""
+    for manager in _managers_for_fleet(db, admin_id):
         perms = dict(manager.permissions or {})
         if perms.get(key):
             perms[key] = False
@@ -164,13 +278,9 @@ def revoke_permission_from_managers(db: Session, key: str) -> None:
             flag_modified(manager, "permissions")
 
 
-def revoke_alert_type_from_managers(db: Session, alert_type: str) -> None:
-    """Force notification_prefs[alert_type]=false on every manager. No commit."""
-    from sqlalchemy import inspect
-    if not inspect(db.bind).has_table("managers"):
-        return
-    managers = db.query(Manager).all()
-    for manager in managers:
+def revoke_alert_type_from_managers(db: Session, alert_type: str, admin_id: int | None = None) -> None:
+    """Force notification_prefs[alert_type]=false on managers. No commit."""
+    for manager in _managers_for_fleet(db, admin_id):
         prefs = dict(manager.notification_prefs or {})
         if prefs.get(alert_type) is not False:
             prefs[alert_type] = False
@@ -197,3 +307,8 @@ def user_applicable_keys(db: Session) -> set[str]:
         .all()
     )
     return {row.key for row in rows}
+
+
+def manager_fleet_admin_id(db: Session, manager: Manager) -> int | None:
+    user = db.query(User).filter(User.id == manager.user_id).first()
+    return user.admin_id if user else None

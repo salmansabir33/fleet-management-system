@@ -23,6 +23,8 @@ import {
 import { MobilePageHeading } from '../../shared/shell'
 import { adminNavLabel } from '../navItems'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import '../styles/admin-routes.css'
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY
@@ -423,6 +425,7 @@ const otherVehicleKey = (routeId) => `${routeId}:other`
 const RoutesPage = () => {
   const { tokens } = useTheme()
   const { apiFor, can, isManager } = usePanelScope()
+  const saListParams = useSaAdminListParams()
   const canManageRoutes = can('route_management')
   const [routes, setRoutes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -490,14 +493,14 @@ const RoutesPage = () => {
   const loadRoutes = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get(apiFor('/routes', '/api/routes'))
+      const res = await api.get(apiFor('/routes', '/api/routes'), { params: saListParams })
       setRoutes(res.data || [])
     } catch (err) {
       console.error('Failed to load routes:', err)
     } finally {
       setLoading(false)
     }
-  }, [apiFor])
+  }, [apiFor, saListParams])
 
   useEffect(() => {
     loadRoutes()
@@ -831,6 +834,7 @@ const RoutesPage = () => {
   return (
     <div className="ft-page-stack ft-page-stack--fill ft-routes-page" style={styles.page}>
       <MobilePageHeading>{adminNavLabel('/admin/routes')}</MobilePageHeading>
+      <AdminFilterBar />
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete route?"

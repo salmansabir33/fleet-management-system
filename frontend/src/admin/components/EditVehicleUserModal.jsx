@@ -4,6 +4,9 @@ import api from '../../api'
 import { Modal, Input, Select, Button, LoadingState } from '../../shared/components'
 import { useTheme } from '../../theme'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useAuth } from '../../auth/AuthContext'
+import { isNewUserPasswordValid, newUserPasswordChecks } from '../../shared/passwordPolicy'
+import SuperAdminFleetSelect from './SuperAdminFleetSelect'
 import UserPhotoField from './UserPhotoField'
 import { uploadUserPhoto, uploadVehiclePhoto } from '../utils/userPic'
 
@@ -45,12 +48,15 @@ const deviceToForm = (device) => ({
 const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
   const { tokens } = useTheme()
   const { apiFor } = usePanelScope()
+  const { role } = useAuth()
   const deviceId = vehicleRow?.db_id
 
   const [loading, setLoading] = useState(true)
   const [imei, setImei] = useState(vehicleRow?.device?.uniqueId || '')
   const [ownerId, setOwnerId] = useState(null)
+  const [deviceAdminId, setDeviceAdminId] = useState(null)
   const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [userPicUrl, setUserPicUrl] = useState(null)
@@ -61,8 +67,14 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
   const [idleTouched, setIdleTouched] = useState(false)
   const [fuelTypes, setFuelTypes] = useState([])
   const [geofences, setGeofences] = useState([])
+  const [linkCandidates, setLinkCandidates] = useState([])
+  const [claimMode, setClaimMode] = useState('create')
+  const [linkUserId, setLinkUserId] = useState('')
+  const [claimAdminId, setClaimAdminId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+
+  const needsClaimAdmin = !ownerId && deviceAdminId == null && role === 'super_admin'
 
   useEffect(() => {
     let cancelled = false
@@ -84,6 +96,7 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
         setVehiclePicUrl(device?.pic_url || null)
         setImei(vehicleRow?.device?.uniqueId || '')
         setIdleTouched(Boolean(device?.fuel_avg_idle != null))
+        setDeviceAdminId(device.admin_id ?? null)
 
         const userId = device.user_id ?? vehicleRow?.owner?.id ?? null
         setOwnerId(userId)
@@ -98,9 +111,19 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
           }
         } else {
           setUsername('')
+          setPassword('')
           setFullName('')
           setPhoneNumber('')
           setUserPicUrl(null)
+          setClaimMode('create')
+          setLinkUserId('')
+          const usersRes = await api.get('/api/users')
+          if (!cancelled) {
+            const candidates = (usersRes.data || []).filter(
+              (u) => !(u.vehicles && u.vehicles.length > 0),
+            )
+            setLinkCandidates(candidates)
+          }
         }
 
         setFuelTypes(fuelRes.data || [])
@@ -118,7 +141,15 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
     return () => { cancelled = true }
   }, [apiFor, deviceId, vehicleRow])
 
-  const canSave = vehicle.name.trim().length > 0 && (!ownerId || username.trim().length > 0)
+  const passwordChecks = newUserPasswordChecks(password)
+
+  const canSave = (() => {
+    if (!vehicle.name.trim()) return false
+    if (ownerId) return username.trim().length > 0
+    if (needsClaimAdmin && !claimAdminId) return false
+    if (claimMode === 'link') return Boolean(linkUserId)
+    return username.trim().length > 0 && isNewUserPasswordValid(password)
+  })()
 
   const handleVehicleChange = (e) => {
     const { name, value } = e.target
@@ -158,26 +189,59 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
     setSaving(true)
     setError(null)
     try {
-      const requests = [
-        api.patch(
-          apiFor(`/vehicles/${deviceId}`, `/api/fleet/devices/${deviceId}`),
-          buildVehiclePayload(),
-        ),
-      ]
+      let resolvedOwnerId = ownerId
 
-      if (ownerId) {
-        requests.push(
+      if (!ownerId) {
+        const claimBody = {
+          name: vehicle.name.trim(),
+        }
+        if (needsClaimAdmin) {
+          claimBody.admin_id = Number(claimAdminId)
+        }
+        if (claimMode === 'link') {
+          claimBody.user_id = Number(linkUserId)
+        } else {
+          claimBody.create_user = {
+            username: username.trim(),
+            password: password.trim(),
+            full_name: fullName.trim() || null,
+            phone_number: phoneNumber.trim() || null,
+          }
+        }
+        const claimRes = await api.post(`/api/fleet/devices/${deviceId}/claim`, claimBody)
+        resolvedOwnerId = claimRes.data?.user_id ?? null
+        setOwnerId(resolvedOwnerId)
+      } else {
+        await Promise.all([
+          api.patch(
+            apiFor(`/vehicles/${deviceId}`, `/api/fleet/devices/${deviceId}`),
+            buildVehiclePayload(),
+          ),
           api.patch(apiFor(`/users/${ownerId}`, `/api/users/${ownerId}`), {
             username: username.trim(),
             full_name: fullName.trim() || null,
             phone_number: phoneNumber.trim() || null,
           }),
-        )
+        ])
       }
 
-      await Promise.all(requests)
-      await uploadUserPhoto(api, apiFor, ownerId, userPicFile)
-      await uploadVehiclePhoto(api, apiFor, deviceId, vehiclePicFile)
+      if (ownerId) {
+        await uploadUserPhoto(api, apiFor, ownerId, userPicFile)
+      } else if (resolvedOwnerId && userPicFile) {
+        await uploadUserPhoto(api, apiFor, resolvedOwnerId, userPicFile)
+      }
+
+      if (ownerId) {
+        await uploadVehiclePhoto(api, apiFor, deviceId, vehiclePicFile)
+      } else {
+        // Claim may have set name; still PATCH remaining vehicle fields
+        await api.patch(
+          apiFor(`/vehicles/${deviceId}`, `/api/fleet/devices/${deviceId}`),
+          buildVehiclePayload(),
+        )
+        await uploadVehiclePhoto(api, apiFor, deviceId, vehiclePicFile)
+      }
+
       onSaved()
       onClose()
     } catch (err) {
@@ -236,19 +300,83 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
             </div>
           )}
 
-          {ownerId ? (
+          <div style={sectionTitle}>User details</div>
+
+          {!ownerId && (
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: tokens.semantic.danger }}>
+              User required — create a new owner or link an existing vehicle-less user.
+            </p>
+          )}
+
+          {!ownerId && (
+            <div style={{ marginBottom: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                type="button"
+                size="sm"
+                variant={claimMode === 'create' ? 'primary' : 'secondary'}
+                onClick={() => setClaimMode('create')}
+              >
+                Create user
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={claimMode === 'link' ? 'primary' : 'secondary'}
+                onClick={() => setClaimMode('link')}
+              >
+                Link existing
+              </Button>
+            </div>
+          )}
+
+          {needsClaimAdmin && (
+            <div style={{ marginBottom: 14 }}>
+              <SuperAdminFleetSelect
+                required
+                value={claimAdminId}
+                onChange={(e) => setClaimAdminId(e.target.value)}
+              />
+            </div>
+          )}
+
+          {!ownerId && claimMode === 'link' ? (
+            <div style={{ marginBottom: 14 }}>
+              <Select
+                label="Vehicle-less user *"
+                value={linkUserId}
+                onChange={(e) => setLinkUserId(e.target.value)}
+              >
+                <option value="">Select user…</option>
+                {linkCandidates.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name || u.username}
+                    {' '}
+                    (
+                    {u.username}
+                    )
+                  </option>
+                ))}
+              </Select>
+              {linkCandidates.length === 0 && (
+                <p style={{ margin: '8px 0 0', fontSize: 12, color: tokens.textMuted }}>
+                  No vehicle-less users available — create a user instead.
+                </p>
+              )}
+            </div>
+          ) : (
             <>
-              <div style={sectionTitle}>User details</div>
-              <div style={{ marginBottom: 14 }}>
-                <UserPhotoField
-                  name={fullName || username}
-                  currentSrc={userPicUrl}
-                  file={userPicFile}
-                  onChange={setUserPicFile}
-                  addLabel="Add photo"
-                  changeLabel="Change photo"
-                />
-              </div>
+              {ownerId && (
+                <div style={{ marginBottom: 14 }}>
+                  <UserPhotoField
+                    name={fullName || username}
+                    currentSrc={userPicUrl}
+                    file={userPicFile}
+                    onChange={setUserPicFile}
+                    addLabel="Add photo"
+                    changeLabel="Change photo"
+                  />
+                </div>
+              )}
               <div style={grid}>
                 <Input
                   label="Username *"
@@ -256,13 +384,25 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="jdoe"
+                  disabled={!ownerId && claimMode === 'link'}
                 />
+                {!ownerId && claimMode === 'create' && (
+                  <Input
+                    label="Password *"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min 8 chars, mixed case + number"
+                    autoComplete="new-password"
+                  />
+                )}
                 <Input
                   label="Full name"
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Jane Doe"
+                  disabled={!ownerId && claimMode === 'link'}
                 />
                 <Input
                   label="Phone number"
@@ -270,16 +410,21 @@ const EditVehicleUserModal = ({ vehicleRow, onClose, onSaved }) => {
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="+1 555 123 4567"
+                  disabled={!ownerId && claimMode === 'link'}
                 />
               </div>
+              {!ownerId && claimMode === 'create' && password.length > 0 && !isNewUserPasswordValid(password) && (
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: tokens.textMuted }}>
+                  {!passwordChecks.minLength && <li>At least 8 characters</li>}
+                  {!passwordChecks.uppercase && <li>One uppercase letter</li>}
+                  {!passwordChecks.lowercase && <li>One lowercase letter</li>}
+                  {!passwordChecks.number && <li>One number</li>}
+                </ul>
+              )}
             </>
-          ) : (
-            <p style={{ margin: '0 0 14px', fontSize: 13, color: tokens.textMuted }}>
-              This vehicle has no linked owner user. You can edit vehicle details below.
-            </p>
           )}
 
-          <div style={{ ...sectionTitle, marginTop: ownerId ? 20 : 0 }}>Vehicle identity</div>
+          <div style={{ ...sectionTitle, marginTop: 20 }}>Vehicle identity</div>
           <div style={{ marginBottom: 14 }}>
             <UserPhotoField
               label="Vehicle photo"

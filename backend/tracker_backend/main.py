@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -19,7 +19,7 @@ from tracker_backend.models import (
     TripRouteMatch, DevicePosition,
 )
 from tracker_backend.schemas import (
-    DeviceCreate, DeviceUpdate, DeviceOut,
+    DeviceCreate, DeviceUpdate, DeviceOut, DeviceClaimBody,
     FuelTypeOut, FuelTypeCreate,
     FuelPriceCreate, FuelPriceUpdate, FuelPriceOut,
     GeofenceCreate, GeofenceUpdate, GeofenceOut,
@@ -58,6 +58,11 @@ from tracker_backend.services.settings_catalog import (
     revoke_alert_type_from_managers,
     revoke_permission_from_managers,
     user_applicable_keys,
+    is_permission_offered,
+    is_alert_offered,
+    set_permission_offered,
+    set_alert_offered,
+    manager_fleet_admin_id,
 )
 from tracker_backend.services import position_writer
 from tracker_backend.services.report import get_daily_report, get_distance_trend_points, _utc_iso
@@ -95,13 +100,26 @@ from tracker_backend.services import route_matcher
 from tracker_backend.services.uploads import UPLOAD_ROOT, save_upload, delete_upload
 from tracker_backend.config import settings
 from tracker_backend.auth_routes import router as auth_router
-from tracker_backend.deps import get_current_admin
+from tracker_backend.super_admin_routes import router as super_admin_router
+from tracker_backend.deps import get_current_admin, get_scope, require_super_admin
+from tracker_backend.services.fleet_scope import (
+    FleetScope,
+    apply_list_admin_filter,
+    assert_same_admin,
+    require_create_admin_id,
+    require_fleet_offering_admin_id,
+    require_global_super_admin_catalog,
+    resolve_list_admin_filter,
+    resolve_user_create_admin_id,
+)
 from tracker_backend.services import auth_service
 from tracker_backend.poller import poll_loop, poll_once
 from tracker_backend.manager_panel import router as manager_panel_router
 from tracker_backend.manager_panel_routes import router as manager_panel_routes_router
 from tracker_backend.manager_panel_geofences import router as manager_panel_geofences_router
 from tracker_backend.manager_panel_trips import build_admin_trips
+from tracker_backend.super_admin_routes import router as super_admin_router
+from tracker_backend.services import tenant_service
 
 logging.basicConfig(level=logging.INFO)
 
@@ -188,6 +206,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(super_admin_router)
 
 # Manager-scoped panel routes (`/api/manager/{manager_id}/...`). Kept
 # in manager_panel.py / manager_panel_routes.py so they stay separate
@@ -195,6 +214,7 @@ app.include_router(auth_router)
 app.include_router(manager_panel_router)
 app.include_router(manager_panel_routes_router)
 app.include_router(manager_panel_geofences_router)
+app.include_router(super_admin_router)
 
 def get_db():
     db = SessionLocal()
@@ -382,6 +402,117 @@ def _resolve_route_match_window(
     )
 
 
+def _assert_trip(scope: FleetScope, trip_id: int) -> Trip:
+    trip = scope.db.query(Trip).filter(Trip.id == trip_id).first()
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    scope.assert_device(trip.device_id)
+    return trip
+
+
+def _assert_alert(scope: FleetScope, alert_id: int) -> DeviceAlert:
+    alert = scope.db.query(DeviceAlert).filter(DeviceAlert.id == alert_id).first()
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    scope.assert_device(alert.device_id)
+    return alert
+
+
+def _scoped_devices_query(scope: FleetScope, db: Session):
+    query = db.query(Device)
+    allowed = scope.device_ids()
+    if allowed is not None:
+        if not allowed:
+            return query.filter(Device.id < 0)
+        return query.filter(Device.id.in_(allowed))
+    return query
+
+
+def _scoped_traccar_ids(scope: FleetScope, db: Session) -> set[int] | None:
+    """Traccar device ids visible to scope; None = unrestricted."""
+    allowed_db = scope.device_ids()
+    if allowed_db is None:
+        return None
+    if not allowed_db:
+        return set()
+    rows = db.query(Device.traccar_device_id).filter(Device.id.in_(allowed_db)).all()
+    return {r[0] for r in rows}
+
+
+def _fuel_price_list_query(scope: FleetScope, db: Session):
+    query = db.query(FuelPrice)
+    if scope.sees_all:
+        return query
+    fleet_admin_id = scope.admin_id
+    if fleet_admin_id is None and scope.role == "super_admin":
+        return query
+    return query.filter(
+        or_(FuelPrice.admin_id.is_(None), FuelPrice.admin_id == fleet_admin_id)
+    )
+
+
+def _fuel_price_write_admin_id(scope: FleetScope) -> int | None:
+    if scope.role == "admin":
+        return scope.admin_id
+    if scope.role == "super_admin":
+        return scope.admin_id
+    return scope.stamp_admin_id()
+
+
+def _assert_fuel_price_mutable(scope: FleetScope, price: FuelPrice) -> None:
+    if scope.role == "admin":
+        if price.admin_id is None:
+            raise HTTPException(status_code=403, detail="Cannot modify global fuel prices")
+        if price.admin_id != scope.admin_id:
+            raise HTTPException(status_code=403, detail="Fuel price out of scope")
+    elif not scope.sees_all:
+        if price.admin_id is None:
+            raise HTTPException(status_code=403, detail="Cannot modify global fuel prices")
+        if scope.admin_id is not None and price.admin_id != scope.admin_id:
+            raise HTTPException(status_code=403, detail="Fuel price out of scope")
+
+
+def _filter_alerts_query(scope: FleetScope, query, query_admin_id: int | None = None):
+    filter_id = resolve_list_admin_filter(scope, query_admin_id)
+    if filter_id is not None:
+        device_ids = (
+            scope.db.query(Device.id).filter(Device.admin_id == filter_id).subquery()
+        )
+        return query.filter(DeviceAlert.device_id.in_(device_ids))
+    allowed = scope.device_ids()
+    if allowed is not None:
+        if not allowed:
+            return query.filter(DeviceAlert.device_id < 0)
+        return query.filter(DeviceAlert.device_id.in_(allowed))
+    return query
+
+
+def _dashboard_device_ids(
+    scope: FleetScope,
+    db: Session,
+    query_admin_id: int | None = None,
+) -> list[int] | None:
+    """Device ids for dashboard aggregates. None = unrestricted (global SA)."""
+    filter_id = resolve_list_admin_filter(scope, query_admin_id)
+    if filter_id is not None:
+        return [
+            row[0]
+            for row in db.query(Device.id).filter(Device.admin_id == filter_id).all()
+        ]
+    allowed = scope.device_ids()
+    if allowed is not None:
+        return list(allowed)
+    return None
+
+
+def _dashboard_fleet_admin_id(
+    scope: FleetScope,
+    query_admin_id: int | None = None,
+) -> int | None:
+    """Effective fleet admin for driver/user counts; None = all fleets."""
+    return resolve_list_admin_filter(scope, query_admin_id)
+
+
 # ─────────────────────────────────────────
 # HEALTH CHECK
 # ─────────────────────────────────────────
@@ -394,7 +525,7 @@ async def root():
 # CACHE STATUS — useful while testing locally
 # ─────────────────────────────────────────
 @app.get("/api/cache/status")
-async def cache_status():
+async def cache_status(scope: FleetScope = Depends(get_scope)):
     """Shows when the cache last refreshed successfully, and whether the
     most recent poll attempt failed (while still serving last-good data)."""
     return traccar_cache.status()
@@ -404,14 +535,21 @@ async def cache_status():
 # DEVICES — served from cache, instant
 # ─────────────────────────────────────────
 @app.get("/api/devices")
-async def get_devices():
+async def get_devices(
+    scope: FleetScope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
     """All registered devices, raw from Traccar (cached, refreshed every
     5 seconds by the background poller)."""
+    allowed_traccar = _scoped_traccar_ids(scope, db)
+    devices = traccar_cache.devices
+    if allowed_traccar is not None:
+        devices = [d for d in devices if d.get("id") in allowed_traccar]
     return {
         "success": True,
-        "count": len(traccar_cache.devices),
+        "count": len(devices),
         "cache_status": traccar_cache.status(),
-        "devices": traccar_cache.devices,
+        "devices": devices,
     }
 
 # ─────────────────────────────────────────
@@ -419,16 +557,16 @@ async def get_devices():
 # ─────────────────────────────────────────
 
 @app.post("/api/fleet/devices", response_model=DeviceOut)
-async def create_fleet_device(payload: DeviceCreate, db: Session = Depends(get_db)):
+async def create_fleet_device(
+    payload: DeviceCreate,
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
     """Registers the device in Traccar AND stores fleet metadata locally.
     Vehicles are always created with a user (Add User); standalone
     ownerless devices are not allowed.
     """
-    if payload.user_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="user_id is required — vehicles are created together with a user.",
-        )
+    scope.require_admin_like()
     # One vehicle per user (product decision — see migration
     # 934f74786d41 / models.Device.user_id's unique=True). Checked
     # before the Traccar call so we don't register a device in
@@ -457,6 +595,17 @@ async def create_fleet_device(payload: DeviceCreate, db: Session = Depends(get_d
     elif "fuel_avg_idle" in payload_fields:
         fuel_avg_idle_auto = False
 
+    owner = scope.assert_user(payload.user_id)
+    if payload.primary_geofence_id is not None:
+        geofence = (
+            db.query(Geofence)
+            .filter(Geofence.id == payload.primary_geofence_id)
+            .first()
+        )
+        if geofence is None:
+            raise HTTPException(status_code=404, detail="Geofence not found")
+        fleet_id = owner.admin_id if owner.admin_id is not None else scope.stamp_admin_id()
+        assert_same_admin(fleet_id, geofence.admin_id, detail="Geofence is not in this fleet")
     device = Device(
         traccar_device_id=traccar_device["id"],
         name=payload.name,
@@ -468,6 +617,7 @@ async def create_fleet_device(payload: DeviceCreate, db: Session = Depends(get_d
         fuel_avg_idle_auto=fuel_avg_idle_auto,
         primary_geofence_id=payload.primary_geofence_id,
         user_id=payload.user_id,
+        admin_id=owner.admin_id if owner.admin_id is not None else scope.stamp_admin_id(),
     )
     db.add(device)
     db.commit()
@@ -476,12 +626,20 @@ async def create_fleet_device(payload: DeviceCreate, db: Session = Depends(get_d
 
 
 @app.get("/api/fleet/devices", response_model=list[DeviceOut])
-def list_fleet_devices(db: Session = Depends(get_db)):
-    return [_device_out(db, d) for d in db.query(Device).all()]
+def list_fleet_devices(
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
+    query = apply_list_admin_filter(scope, db.query(Device), Device.admin_id, admin_id)
+    return [_device_out(db, d) for d in query.all()]
 
 
 @app.get("/api/fleet/devices/all")
-async def list_all_devices_merged(db: Session = Depends(get_db)):
+async def list_all_devices_merged(
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
     """Union of every device Traccar currently reports AND every device
     row in our local DB, matched by traccar_device_id (which can differ
     from our own `id`). Powers the Fleet Devices page so devices that
@@ -497,7 +655,10 @@ async def list_all_devices_merged(db: Session = Depends(get_db)):
     traccar_devices = traccar_cache.devices
     positions_by_device = {p["deviceId"]: p for p in traccar_cache.positions}
 
-    db_devices = db.query(Device).all()
+    db_devices = _scoped_devices_query(scope, db).all()
+    allowed_traccar = {d.traccar_device_id for d in db_devices}
+    if scope.device_ids() is not None:
+        traccar_devices = [t for t in traccar_devices if t.get("id") in allowed_traccar]
     db_by_traccar_id = {d.traccar_device_id: d for d in db_devices}
 
     traccar_ids_seen = set()
@@ -552,10 +713,63 @@ async def list_all_devices_merged(db: Session = Depends(get_db)):
 
 
 @app.get("/api/fleet/devices/{device_id}", response_model=DeviceOut)
-def get_fleet_device(device_id: int, db: Session = Depends(get_db)):
+def get_fleet_device(
+    device_id: int,
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
+    device = scope.assert_device(device_id)
+    return _device_out(db, device)
+
+
+@app.post("/api/fleet/devices/{device_id}/claim", response_model=DeviceOut)
+def claim_fleet_device(
+    device_id: int,
+    payload: DeviceClaimBody,
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
+    """Pair an ownerless fleet device with a new or existing user."""
+    from tracker_backend.models import Admin
+    from tracker_backend.services.fleet_device_service import claim_device
+
+    scope.require_admin_like()
+    # Authorize via scope, then reload on the request session (main.get_db
+    # and deps.get_db used by get_scope are distinct sessions).
+    if scope.sees_all:
+        if db.query(Device).filter(Device.id == device_id).first() is None:
+            raise HTTPException(status_code=404, detail="Device not found")
+    else:
+        scope.assert_device(device_id)
     device = db.query(Device).filter(Device.id == device_id).first()
-    if not device:
+    if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
+
+    if device.admin_id is not None:
+        fleet_admin_id = device.admin_id
+    elif scope.role == "admin":
+        fleet_admin_id = scope.admin_id
+    else:
+        fleet_admin_id = payload.admin_id
+        if fleet_admin_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="admin_id is required when claiming a device with no fleet",
+            )
+        admin = db.query(Admin).filter(Admin.id == fleet_admin_id).first()
+        if admin is None:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        if not admin.is_active:
+            raise HTTPException(status_code=403, detail="Admin is disabled")
+
+    claim_device(
+        db,
+        device,
+        user_id=payload.user_id,
+        create_user=payload.create_user,
+        admin_id=fleet_admin_id,
+        name=payload.name,
+    )
     return _device_out(db, device)
 
 
@@ -564,7 +778,9 @@ async def upload_fleet_device_photo(
     device_id: int,
     pic: UploadFile = File(...),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     from tracker_backend.services.fleet_device_service import set_device_pic
 
     device = db.query(Device).filter(Device.id == device_id).first()
@@ -575,19 +791,37 @@ async def upload_fleet_device_photo(
 
 
 @app.patch("/api/fleet/devices/{device_id}", response_model=DeviceOut)
-def update_fleet_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(get_db)):
+def update_fleet_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
     payload_fields = payload.dict(exclude_unset=True)
 
-    if "user_id" in payload_fields and payload_fields["user_id"] != device.user_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Vehicle ownership cannot be changed. Delete the user (and their vehicle) instead.",
-        )
+    if "user_id" in payload_fields:
+        if payload_fields["user_id"] is None:
+            raise HTTPException(
+                status_code=400,
+                detail="cannot clear vehicle owner",
+            )
+        if payload_fields["user_id"] != device.user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Vehicle ownership cannot be changed. Delete the user (and their vehicle) instead.",
+            )
     payload_fields.pop("user_id", None)
+
+    if "primary_geofence_id" in payload_fields and payload_fields["primary_geofence_id"] is not None:
+        geofence = (
+            db.query(Geofence)
+            .filter(Geofence.id == payload_fields["primary_geofence_id"])
+            .first()
+        )
+        if geofence is None:
+            raise HTTPException(status_code=404, detail="Geofence not found")
+        assert_same_admin(device.admin_id, geofence.admin_id, detail="Geofence is not in this fleet")
 
     for field, value in payload_fields.items():
         setattr(device, field, value)
@@ -610,7 +844,9 @@ def update_fleet_device(device_id: int, payload: DeviceUpdate, db: Session = Dep
 
 
 @app.delete("/api/fleet/devices/{device_id}")
-async def delete_fleet_device(device_id: int, db: Session = Depends(get_db)):
+async def delete_fleet_device(device_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     from tracker_backend.services.fleet_device_service import delete_fleet_device_cascade
 
     device = db.query(Device).filter(Device.id == device_id).first()
@@ -627,12 +863,14 @@ async def delete_fleet_device(device_id: int, db: Session = Depends(get_db)):
 
 
 @app.delete("/api/fleet/devices/by-traccar/{traccar_device_id}")
-async def delete_traccar_only_device(traccar_device_id: int, db: Session = Depends(get_db)):
+async def delete_traccar_only_device(traccar_device_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Deletes a device by its Traccar id, for the rare case where it
     exists in Traccar but has no local DB row yet (the poller normally
     creates one within 5 seconds, so this window is brief). Removes it
     from Traccar, and also deletes the matching DB row if one turns up.
     """
+    scope.require_admin_like()
     try:
         await traccar_service.delete_device(traccar_device_id)
     except httpx.HTTPStatusError as e:
@@ -650,10 +888,12 @@ async def delete_traccar_only_device(traccar_device_id: int, db: Session = Depen
 
 
 @app.get("/api/fleet/devices/{device_id}/driver")
-def get_device_current_driver(device_id: int, db: Session = Depends(get_db)):
+def get_device_current_driver(device_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Currently-assigned driver for this vehicle, if any — used by the
     device edit page's driver-assignment control.
     """
+    scope.require_admin_like()
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -681,12 +921,16 @@ def get_device_current_driver(device_id: int, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 
 @app.get("/api/fuel-types", response_model=list[FuelTypeOut])
-def list_fuel_types(db: Session = Depends(get_db)):
+def list_fuel_types(db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     return db.query(FuelType).all()
 
 
 @app.post("/api/fuel-types", response_model=FuelTypeOut)
-def create_fuel_type(payload: FuelTypeCreate, db: Session = Depends(get_db)):
+def create_fuel_type(payload: FuelTypeCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    require_global_super_admin_catalog(scope)
     fuel_type = FuelType(name=payload.name)
     db.add(fuel_type)
     db.commit()
@@ -699,9 +943,18 @@ def create_fuel_type(payload: FuelTypeCreate, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 
 @app.post("/api/fuel-prices", response_model=FuelPriceOut)
-def upsert_fuel_price(payload: FuelPriceCreate, db: Session = Depends(get_db)):
+def upsert_fuel_price(payload: FuelPriceCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
+    write_admin_id = _fuel_price_write_admin_id(scope)
+    if scope.role == "admin" and write_admin_id is None:
+        raise HTTPException(status_code=403, detail="Admin has no fleet id")
     return upsert_fuel_price_with_reflow(
-        db, payload.fuel_type_id, payload.price_per_liter, payload.effective_date_start
+        db,
+        payload.fuel_type_id,
+        payload.price_per_liter,
+        payload.effective_date_start,
+        admin_id=write_admin_id,
     )
 
 
@@ -711,8 +964,10 @@ def list_fuel_prices(
     from_date: date | None = None,
     to_date: date | None = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
-    query = db.query(FuelPrice)
+    scope.require_admin_like()
+    query = _fuel_price_list_query(scope, db)
     if fuel_type_id is not None:
         query = query.filter(FuelPrice.fuel_type_id == fuel_type_id)
     if from_date is not None:
@@ -727,7 +982,9 @@ def get_latest_fuel_price(
     fuel_type_id: int,
     on_date: date | None = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     lookup_date = on_date or date.today()
     price_row = get_applicable_fuel_price_row(db, fuel_type_id, lookup_date)
     if price_row is None:
@@ -739,7 +996,9 @@ def get_latest_fuel_price(
 
 
 @app.patch("/api/fuel-prices/{price_id}", response_model=FuelPriceOut)
-def update_fuel_price(price_id: int, payload: FuelPriceUpdate, db: Session = Depends(get_db)):
+def update_fuel_price(price_id: int, payload: FuelPriceUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     price = db.query(FuelPrice).filter(FuelPrice.id == price_id).first()
     if not price:
         raise HTTPException(status_code=404, detail="Fuel price not found")
@@ -751,7 +1010,13 @@ def update_fuel_price(price_id: int, payload: FuelPriceUpdate, db: Session = Dep
 
 
 @app.delete("/api/fuel-prices/{price_id}")
-def delete_fuel_price(price_id: int, db: Session = Depends(get_db)):
+def delete_fuel_price(price_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
+    price = db.query(FuelPrice).filter(FuelPrice.id == price_id).first()
+    if not price:
+        raise HTTPException(status_code=404, detail="Fuel price not found")
+    _assert_fuel_price_mutable(scope, price)
     deleted = delete_fuel_price_with_reflow(db, price_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Fuel price not found")
@@ -763,8 +1028,13 @@ def delete_fuel_price(price_id: int, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 
 @app.post("/api/geofences", response_model=GeofenceOut)
-def create_geofence(payload: GeofenceCreate, db: Session = Depends(get_db)):
-    geofence = Geofence(**payload.dict())
+def create_geofence(payload: GeofenceCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
+    data = payload.dict()
+    body_admin_id = data.pop("admin_id", None)
+    data["admin_id"] = require_create_admin_id(scope, body_admin_id)
+    geofence = Geofence(**data)
     db.add(geofence)
     db.commit()
     db.refresh(geofence)
@@ -772,12 +1042,20 @@ def create_geofence(payload: GeofenceCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/geofences", response_model=list[GeofenceOut])
-def list_geofences(db: Session = Depends(get_db)):
-    return db.query(Geofence).all()
+def list_geofences(
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
+    scope.require_admin_like()
+    query = apply_list_admin_filter(scope, db.query(Geofence), Geofence.admin_id, admin_id)
+    return query.all()
 
 
 @app.get("/api/geofences/{geofence_id}", response_model=GeofenceOut)
-def get_geofence(geofence_id: int, db: Session = Depends(get_db)):
+def get_geofence(geofence_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.assert_geofence(geofence_id)
     geofence = db.query(Geofence).filter(Geofence.id == geofence_id).first()
     if not geofence:
         raise HTTPException(status_code=404, detail="Geofence not found")
@@ -785,7 +1063,9 @@ def get_geofence(geofence_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/geofences/{geofence_id}", response_model=GeofenceOut)
-def update_geofence(geofence_id: int, payload: GeofenceUpdate, db: Session = Depends(get_db)):
+def update_geofence(geofence_id: int, payload: GeofenceUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.assert_geofence(geofence_id)
     geofence = db.query(Geofence).filter(Geofence.id == geofence_id).first()
     if not geofence:
         raise HTTPException(status_code=404, detail="Geofence not found")
@@ -797,7 +1077,9 @@ def update_geofence(geofence_id: int, payload: GeofenceUpdate, db: Session = Dep
 
 
 @app.delete("/api/geofences/{geofence_id}")
-def delete_geofence(geofence_id: int, db: Session = Depends(get_db)):
+def delete_geofence(geofence_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.assert_geofence(geofence_id)
     geofence = db.query(Geofence).filter(Geofence.id == geofence_id).first()
     if not geofence:
         raise HTTPException(status_code=404, detail="Geofence not found")
@@ -811,7 +1093,9 @@ def delete_geofence(geofence_id: int, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 
 @app.post("/api/routes/preview", response_model=RoutePreviewOut)
-async def preview_route(payload: RouteCreate):
+async def preview_route(payload: RouteCreate,
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     path = await routing_service.get_road_path(
         [(point.lat, point.lon) for point in payload.waypoints]
     )
@@ -822,7 +1106,9 @@ async def preview_route(payload: RouteCreate):
 
 
 @app.post("/api/routes", response_model=RouteOut)
-async def create_route(payload: RouteCreate, db: Session = Depends(get_db)):
+async def create_route(payload: RouteCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     path = await routing_service.get_road_path(
         [(point.lat, point.lon) for point in payload.waypoints]
     )
@@ -832,6 +1118,7 @@ async def create_route(payload: RouteCreate, db: Session = Depends(get_db)):
         waypoints=[point.model_dump() for point in payload.waypoints],
         path=[_route_point_dict(lat, lon) for lat, lon in path],
         tolerance_meters=payload.tolerance_meters or 400,
+        admin_id=require_create_admin_id(scope, payload.admin_id),
     )
     db.add(route)
     db.commit()
@@ -847,8 +1134,17 @@ async def create_route(payload: RouteCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/routes", response_model=list[RouteListOut])
-def list_routes(db: Session = Depends(get_db)):
-    routes = db.query(Route).order_by(Route.created_at.desc(), Route.id.desc()).all()
+def list_routes(
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
+    scope.require_admin_like()
+    routes = (
+        apply_list_admin_filter(scope, db.query(Route), Route.admin_id, admin_id)
+        .order_by(Route.created_at.desc(), Route.id.desc())
+        .all()
+    )
     assignment_rows = (
         db.query(RouteVehicle, Device)
         .join(Device, Device.id == RouteVehicle.device_id)
@@ -899,7 +1195,9 @@ def list_routes(db: Session = Depends(get_db)):
 
 
 @app.get("/api/routes/{route_id}", response_model=RouteOut)
-def get_route_detail(route_id: int, db: Session = Depends(get_db)):
+def get_route_detail(route_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
@@ -907,7 +1205,9 @@ def get_route_detail(route_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/routes/{route_id}", response_model=RouteOut)
-async def update_route(route_id: int, payload: RouteUpdate, db: Session = Depends(get_db)):
+async def update_route(route_id: int, payload: RouteUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
@@ -930,7 +1230,9 @@ async def update_route(route_id: int, payload: RouteUpdate, db: Session = Depend
 
 
 @app.delete("/api/routes/{route_id}")
-def delete_route(route_id: int, db: Session = Depends(get_db)):
+def delete_route(route_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
@@ -940,13 +1242,16 @@ def delete_route(route_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/routes/{route_id}/vehicles")
-def assign_route_vehicle(route_id: int, payload: RouteVehicleAssign, db: Session = Depends(get_db)):
+def assign_route_vehicle(route_id: int, payload: RouteVehicleAssign, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
     device = db.query(Device).filter(Device.id == payload.device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    assert_same_admin(route.admin_id, device.admin_id, detail="Route and vehicle are not in the same fleet")
 
     _assignment, created = route_assignment_service.assign_route(
         db, route_id, payload.device_id
@@ -966,7 +1271,9 @@ def assign_route_vehicle(route_id: int, payload: RouteVehicleAssign, db: Session
 
 
 @app.delete("/api/routes/{route_id}/vehicles/{device_id}")
-def unassign_route_vehicle(route_id: int, device_id: int, db: Session = Depends(get_db)):
+def unassign_route_vehicle(route_id: int, device_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     assignment = route_assignment_service.unassign_route(db, route_id, device_id)
     if assignment is None:
         raise HTTPException(status_code=404, detail="Route assignment not found")
@@ -974,7 +1281,9 @@ def unassign_route_vehicle(route_id: int, device_id: int, db: Session = Depends(
 
 
 @app.post("/api/routes/{route_id}/recalculate")
-def recalculate_route_matches(route_id: int, db: Session = Depends(get_db)):
+def recalculate_route_matches(route_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
@@ -989,7 +1298,8 @@ def recalculate_route_matches(route_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/admin/recompute-route-matches")
-def admin_recompute_all_route_matches(db: Session = Depends(get_db)):
+def admin_recompute_all_route_matches(db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Recompute route match data for every route and every assigned device.
 
     Iterates dynamically over all routes and devices currently in the
@@ -1002,6 +1312,7 @@ def admin_recompute_all_route_matches(db: Session = Depends(get_db)):
     stale stored results are brought up to date without needing a new
     script each time.
     """
+    scope.require_admin_like()
     _log = logging.getLogger("admin")
     _log.info("admin_recompute_all_route_matches: starting full recompute")
     try:
@@ -1021,7 +1332,9 @@ def list_route_match_vehicles(
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
@@ -1040,7 +1353,9 @@ def list_route_other_trips(
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
@@ -1079,7 +1394,9 @@ def list_route_vehicle_trips(
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     start_dt, end_dt = _resolve_route_match_window(range, date, start, end)
     trips = route_assignment_service.list_device_trips_attributed_to_route(
         db, route_id, device_id, start_dt, end_dt,
@@ -1106,7 +1423,9 @@ def get_trip_route_detail(
     route_id: int,
     max_points: int | None = 4000,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     if max_points is not None and max_points < 2:
         raise HTTPException(status_code=400, detail="max_points must be at least 2")
 
@@ -1130,7 +1449,9 @@ def list_all_trips(
     device_id: int | None = None,
     manager_id: int | None = None,
     geofence_id: int | None = None,
+    admin_id: int | None = Query(None),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Fleet-wide trips, either for a single day (`trip_date`) or an
     explicit `start`/`end` datetime range. With no time args, returns
@@ -1146,6 +1467,8 @@ def list_all_trips(
     driver resolution (driver assignment is time-ranged, not a
     column on Trip) — see build_admin_trips / get_trips_in_range_fleet_wide.
     """
+    scope.require_admin_like()
+    fleet_admin_id = resolve_list_admin_filter(scope, admin_id)
     return build_admin_trips(
         db,
         trip_date=trip_date,
@@ -1156,6 +1479,7 @@ def list_all_trips(
         device_id=device_id,
         manager_id=manager_id,
         geofence_id=geofence_id,
+        admin_id=fleet_admin_id,
     )
 
 
@@ -1167,6 +1491,7 @@ def list_trips(
     end: str | None = None,
     lite: bool = False,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Trips for a device, either for a single day (`trip_date`), an
     explicit `start`/`end` datetime range, or with no time args every
@@ -1181,6 +1506,7 @@ def list_trips(
     identity, times, distance, status, geofence_id). Same TripOut schema;
     driver_* fields stay null.
     """
+    scope.require_admin_like()
     fetch_all = trip_date is None and not start and not end
     if fetch_all:
         start_dt, end_dt = None, None
@@ -1241,7 +1567,9 @@ def list_trips(
 
 
 @app.patch("/api/trips/{trip_id}", response_model=TripOut)
-def update_trip_costs(trip_id: int, payload: TripCostsUpdate, db: Session = Depends(get_db)):
+def update_trip_costs(trip_id: int, payload: TripCostsUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -1263,7 +1591,9 @@ def confirm_trip_driver(
     trip_id: int,
     payload: TripDriverConfirm,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -1276,7 +1606,9 @@ def confirm_trip_driver(
 
 
 @app.get("/api/trips/{trip_id}/confirmable-drivers", response_model=list[ConfirmableDriverOut])
-def list_confirmable_drivers(trip_id: int, db: Session = Depends(get_db)):
+def list_confirmable_drivers(trip_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -1292,7 +1624,9 @@ def confirm_trip_route(
     trip_id: int,
     payload: TripRouteConfirm,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -1305,7 +1639,9 @@ def confirm_trip_route(
 
 
 @app.get("/api/trips/{trip_id}/confirmable-routes", response_model=list[ConfirmableRouteOut])
-def list_confirmable_routes(trip_id: int, db: Session = Depends(get_db)):
+def list_confirmable_routes(trip_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -1317,12 +1653,14 @@ def list_confirmable_routes(trip_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/trips/backfill")
-def trigger_trip_backfill(db: Session = Depends(get_db)):
+def trigger_trip_backfill(db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Manually re-run position-gap repair and trip reconciliation
     without restarting the server — handy after downtime (missing GPS
     trails), after fixing a geofence, or just to double check nothing's
     stuck.
     """
+    scope.require_admin_like()
     gap_stats = backfill_gapped_trip_positions(db)
     device_stats = position_writer.backfill_gapped_device_ranges(db)
     backfill_missed_trips(db)
@@ -1386,6 +1724,7 @@ def _manager_out(db: Session, manager: Manager, include_assigned_users: bool = F
         username=user.username if user else "",
         full_name=user.full_name if user else None,
         phone_number=user.phone_number if user else None,
+        admin_id=user.admin_id if user else None,
         pic_url=_pic_url(user.pic_path) if user else None,
         permissions=manager.permissions or {},
         notification_prefs=manager.notification_prefs or {},
@@ -1400,13 +1739,16 @@ def _manager_out(db: Session, manager: Manager, include_assigned_users: bool = F
 
 
 @app.post("/api/users", response_model=UserOut)
-def create_user(payload: UserCreate, db: Session = Depends(get_db)):
+def create_user(payload: UserCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     user = user_service.create_user_row(
         db,
         username=payload.username,
         password=payload.password,
         full_name=payload.full_name,
         phone_number=payload.phone_number,
+        admin_id=resolve_user_create_admin_id(scope, payload.admin_id),
     )
     return _user_out(db, user)
 
@@ -1416,7 +1758,9 @@ def list_users(
     q: str | None = None,
     unassigned: bool = False,
     exclude_managers: bool = False,
+    admin_id: int | None = Query(None),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """List users, with optional filters used by the Managers page:
     - `q`: search by username or full name (case-insensitive substring)
@@ -1425,7 +1769,8 @@ def list_users(
     - `exclude_managers=true`: only users who are NOT already a manager
       — candidate list for the "Add New Manager" modal
     """
-    query = db.query(User)
+    scope.require_admin_like()
+    query = apply_list_admin_filter(scope, db.query(User), User.admin_id, admin_id)
 
     if q:
         like = f"%{q}%"
@@ -1447,21 +1792,19 @@ def list_users(
 
 
 @app.get("/api/users/{user_id}", response_model=UserOut)
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def get_user(user_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    user = scope.assert_user(user_id)
     return _user_out(db, user)
 
 
 @app.patch("/api/users/{user_id}/permissions", response_model=UserOut)
-def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, db: Session = Depends(get_db)):
+def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Stores user-panel grants. Manager-only keys (applies_to_user=false)
     are rejected if set true. Enforcement is UI-only until login.
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = scope.assert_user(user_id)
 
     allowed = user_applicable_keys(db)
     rejected = [
@@ -1485,10 +1828,9 @@ def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, db: Se
 
 
 @app.get("/api/users/{user_id}/notification-prefs", response_model=NotificationPrefsOut)
-def get_user_notification_prefs(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def get_user_notification_prefs(user_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    user = scope.assert_user(user_id)
     ensure_alert_type_settings(db)
     known = [row.alert_type for row in db.query(AlertTypeSetting).order_by(AlertTypeSetting.alert_type.asc()).all()]
     return NotificationPrefsOut(
@@ -1501,10 +1843,9 @@ def update_user_notification_prefs(
     user_id: int,
     payload: NotificationPrefsUpdate,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = scope.assert_user(user_id)
     ensure_alert_type_settings(db)
     known = [row.alert_type for row in db.query(AlertTypeSetting).all()]
     known_set = set(known)
@@ -1521,10 +1862,9 @@ def update_user_notification_prefs(
 
 
 @app.patch("/api/users/{user_id}", response_model=UserOut)
-def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    user = scope.assert_user(user_id)
 
     payload_fields = payload.dict(exclude_unset=True)
     new_password = payload_fields.pop("password", None)
@@ -1549,11 +1889,10 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
 def reveal_user_password(
     user_id: int,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
     _admin: dict = Depends(get_current_admin),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = scope.assert_user(user_id)
     password = auth_service.decrypt_password(user.password_enc)
     if not password:
         raise HTTPException(status_code=404, detail="Password not available")
@@ -1565,7 +1904,9 @@ async def upload_user_photo(
     user_id: int,
     pic: UploadFile = File(...),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
+    scope.require_admin_like()
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1574,7 +1915,8 @@ async def upload_user_photo(
 
 
 @app.delete("/api/users/{user_id}")
-async def delete_user(user_id: int, db: Session = Depends(get_db)):
+async def delete_user(user_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Deletes a User and their paired vehicle (Traccar + local Device).
     Also used by CreateUserModal to roll back a just-created user when
     the mandatory vehicle POST fails (that user has no vehicle yet).
@@ -1582,21 +1924,35 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
     If the user is a manager and owns a vehicle, cascade demotes them
     first (assigned users are unassigned) then deletes the pair.
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = scope.assert_user(user_id)
 
     result = await user_service.delete_user_row(db, user)
     return {"detail": "User deleted", **result}
 
 
 @app.get("/api/managers", response_model=list[ManagerOut])
-def list_managers(q: str | None = None, db: Session = Depends(get_db)):
+def list_managers(
+    q: str | None = None,
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
     """List all managers for the left-side panel on the Managers page.
     `q` filters by the promoted user's username or full name (the
     navbar search bar in the wireframe).
     """
+    scope.require_admin_like()
+    filter_id = resolve_list_admin_filter(scope, admin_id)
     managers = db.query(Manager).all()
+    if filter_id is not None:
+        manager_user_ids = {m.user_id for m in managers}
+        allowed_owner_ids = {
+            row[0]
+            for row in db.query(User.id)
+            .filter(User.id.in_(manager_user_ids), User.admin_id == filter_id)
+            .all()
+        }
+        managers = [m for m in managers if m.user_id in allowed_owner_ids]
     out = [_manager_out(db, m) for m in managers]
 
     if q:
@@ -1608,63 +1964,63 @@ def list_managers(q: str | None = None, db: Session = Depends(get_db)):
 
 
 @app.post("/api/managers", response_model=ManagerOut)
-def create_manager(payload: ManagerCreate, db: Session = Depends(get_db)):
+def create_manager(payload: ManagerCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Promotes an existing user to Manager — the "+ Add New Manager"
     flow: pick a user from the list, they become a manager. Idempotent
     if the user is already a manager (returns their existing row).
     """
+    scope.require_admin_like()
     user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if not scope.sees_all:
+        assert_same_admin(user.admin_id, scope.admin_id, detail="User is not in your fleet")
 
     manager = manager_service.promote_user_to_manager(db, payload.user_id)
     return _manager_out(db, manager)
 
 
 @app.get("/api/managers/permission-keys")
-def get_manager_permission_keys(db: Session = Depends(get_db)):
+def get_manager_permission_keys(db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Suggested permission checkbox list for the Permissions modal.
     Registered ABOVE /api/managers/{manager_id} on purpose — FastAPI
     matches routes in registration order, and "permission-keys" would
     otherwise be swallowed by {manager_id} (and 422 on the int parse)
     before ever reaching this one.
 
-    Sourced from permission_definitions (active rows only) rather than
-    a hardcoded list, so the admin Settings catalog is the single
-    source of which keys the modal offers.
+    Sourced from permission_definitions + this fleet's offerings.
     """
+    scope.require_admin_like()
     ensure_permission_definitions(db)
-    rows = (
-        db.query(PermissionDefinition)
-        .filter(PermissionDefinition.is_active.is_(True))
-        .order_by(PermissionDefinition.id.asc())
-        .all()
-    )
-    return {"keys": [row.key for row in rows]}
+    fleet_id = scope.stamp_admin_id()
+    return {"keys": sorted(active_permission_keys(db, fleet_id))}
 
 
 @app.get("/api/managers/{manager_id}", response_model=ManagerDetailOut)
-def get_manager(manager_id: int, db: Session = Depends(get_db)):
+def get_manager(manager_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Full manager detail — profile, permissions, and every assigned
     user (each with their owned vehicles), which is what the manager
     detail panel + "Total Vehicles" section on the wireframe render.
     """
-    manager = db.query(Manager).filter(Manager.id == manager_id).first()
-    if not manager:
-        raise HTTPException(status_code=404, detail="Manager not found")
+    scope.require_admin_like()
+    manager = scope.assert_manager(manager_id)
     return _manager_out(db, manager, include_assigned_users=True)
 
 
 @app.patch("/api/managers/{manager_id}/permissions", response_model=ManagerOut)
-def update_manager_permissions(manager_id: int, payload: ManagerPermissionsUpdate, db: Session = Depends(get_db)):
-    """Saves permission checkboxes for a manager. Inactive catalog keys
-    cannot be granted — Settings is the option menu.
+def update_manager_permissions(manager_id: int, payload: ManagerPermissionsUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    """Saves permission checkboxes for a manager. Keys not offered by
+    this fleet cannot be granted — Settings is the option menu.
     """
-    manager = db.query(Manager).filter(Manager.id == manager_id).first()
-    if not manager:
-        raise HTTPException(status_code=404, detail="Manager not found")
+    scope.require_admin_like()
+    manager = scope.assert_manager(manager_id)
+    fleet_id = manager_fleet_admin_id(db, manager)
 
-    allowed = active_permission_keys(db)
+    allowed = active_permission_keys(db, fleet_id)
     stored = dict(manager.permissions or {})
     for key in list(stored):
         if key not in allowed:
@@ -1681,12 +2037,13 @@ def update_manager_permissions(manager_id: int, payload: ManagerPermissionsUpdat
 
 
 @app.get("/api/managers/{manager_id}/notification-prefs", response_model=NotificationPrefsOut)
-def get_manager_notification_prefs(manager_id: int, db: Session = Depends(get_db)):
-    manager = db.query(Manager).filter(Manager.id == manager_id).first()
-    if not manager:
-        raise HTTPException(status_code=404, detail="Manager not found")
+def get_manager_notification_prefs(manager_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
+    manager = scope.assert_manager(manager_id)
+    fleet_id = manager_fleet_admin_id(db, manager)
     ensure_alert_type_settings(db)
-    offered = offered_alert_types(db)
+    offered = offered_alert_types(db, fleet_id)
     known = [row.alert_type for row in db.query(AlertTypeSetting).order_by(AlertTypeSetting.alert_type.asc()).all()]
     stored = dict(manager.notification_prefs or {})
     for alert_type in known:
@@ -1702,12 +2059,13 @@ def update_manager_notification_prefs(
     manager_id: int,
     payload: NotificationPrefsUpdate,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
-    manager = db.query(Manager).filter(Manager.id == manager_id).first()
-    if not manager:
-        raise HTTPException(status_code=404, detail="Manager not found")
+    scope.require_admin_like()
+    manager = scope.assert_manager(manager_id)
+    fleet_id = manager_fleet_admin_id(db, manager)
     ensure_alert_type_settings(db)
-    offered = offered_alert_types(db)
+    offered = offered_alert_types(db, fleet_id)
     known = [row.alert_type for row in db.query(AlertTypeSetting).all()]
     stored = dict(manager.notification_prefs or {})
     for alert_type in known:
@@ -1727,11 +2085,13 @@ def update_manager_notification_prefs(
 
 
 @app.delete("/api/managers/{manager_id}")
-def delete_manager(manager_id: int, db: Session = Depends(get_db)):
+def delete_manager(manager_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Demotes a manager back to a plain user. Everyone assigned to
     them is unassigned (manager_id -> NULL), not deleted, first — see
     manager_service.demote_manager.
     """
+    scope.require_admin_like()
     manager = db.query(Manager).filter(Manager.id == manager_id).first()
     if not manager:
         raise HTTPException(status_code=404, detail="Manager not found")
@@ -1745,12 +2105,14 @@ def assign_manager_users(
     manager_id: int,
     payload: ManagerAssignUsers,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
     _admin: dict = Depends(get_current_admin),
 ):
     """The "Assign Users" modal action — assigns the given users to
     THIS manager (whichever manager's detail panel is open), moving
     each off any manager they previously reported to.
     """
+    scope.require_admin_like()
     manager = db.query(Manager).filter(Manager.id == manager_id).first()
     if not manager:
         raise HTTPException(status_code=404, detail="Manager not found")
@@ -1764,6 +2126,18 @@ def assign_manager_users(
                     detail="Cannot reassign a manager's own account to a different manager",
                 )
 
+    manager_user = db.query(User).filter(User.id == manager.user_id).first()
+    if manager_user is not None and payload.user_ids:
+        for uid in payload.user_ids:
+            assignee = db.query(User).filter(User.id == uid).first()
+            if assignee is None:
+                raise HTTPException(status_code=404, detail=f"User {uid} not found")
+            assert_same_admin(
+                assignee.admin_id,
+                manager_user.admin_id,
+                detail="Cannot assign users from another fleet to this manager",
+            )
+
     manager_service.assign_users_to_manager(db, manager_id, payload.user_ids)
     return _manager_out(db, manager, include_assigned_users=True)
 
@@ -1773,8 +2147,10 @@ def unassign_manager_user(
     manager_id: int,
     payload: ManagerUnassignUser,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
     _admin: dict = Depends(get_current_admin),
 ):
+    scope.require_admin_like()
     manager = db.query(Manager).filter(Manager.id == manager_id).first()
     if not manager:
         raise HTTPException(status_code=404, detail="Manager not found")
@@ -1797,21 +2173,56 @@ def unassign_manager_user(
 # SETTINGS — permission catalog + fleet-wide alert-type toggles
 # ─────────────────────────────────────────
 
+def _permission_definition_out(db: Session, row: PermissionDefinition, fleet_id: int | None) -> PermissionDefinitionOut:
+    out = PermissionDefinitionOut.model_validate(row)
+    if fleet_id is not None:
+        out.is_active = is_permission_offered(
+            db, fleet_id, row.key, global_active=bool(row.is_active),
+        )
+    return out
+
+
+def _alert_type_setting_out(db: Session, row: AlertTypeSetting, fleet_id: int | None) -> AlertTypeSettingOut:
+    out = AlertTypeSettingOut.model_validate(row)
+    if fleet_id is not None:
+        out.offered_to_managers = is_alert_offered(
+            db, fleet_id, row.alert_type, global_offered=bool(row.offered_to_managers),
+        )
+    return out
+
+
 @app.get("/api/settings/permissions", response_model=list[PermissionDefinitionOut])
-def list_permission_definitions(include_inactive: bool = False, db: Session = Depends(get_db)):
-    """Permission-key catalog for the admin Settings page. Active-only
-    by default; pass include_inactive=true to also return soft-deleted
-    rows so they can be reactivated.
+def list_permission_definitions(include_inactive: bool = False, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    """Permission-key catalog for the admin Settings page.
+
+    For a fleet admin (or SA acting as a fleet), is_active reflects that
+    fleet's offerings. Missing offering rows default to offered.
     """
+    scope.require_admin_like()
     ensure_permission_definitions(db)
-    query = db.query(PermissionDefinition)
-    if not include_inactive:
-        query = query.filter(PermissionDefinition.is_active.is_(True))
-    return query.order_by(PermissionDefinition.key.asc()).all()
+    fleet_id = scope.stamp_admin_id()
+    rows = db.query(PermissionDefinition).order_by(PermissionDefinition.key.asc()).all()
+    result = []
+    for row in rows:
+        if fleet_id is not None:
+            if not row.is_active:
+                continue
+            offered = is_permission_offered(db, fleet_id, row.key, global_active=True)
+            if not include_inactive and not offered:
+                continue
+            result.append(_permission_definition_out(db, row, fleet_id))
+            continue
+        if not include_inactive and not row.is_active:
+            continue
+        result.append(PermissionDefinitionOut.model_validate(row))
+    return result
 
 
 @app.post("/api/settings/permissions", response_model=PermissionDefinitionOut)
-def create_permission_definition(payload: PermissionDefinitionCreate, db: Session = Depends(get_db)):
+def create_permission_definition(payload: PermissionDefinitionCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    require_global_super_admin_catalog(scope)
     key = (payload.key or "").strip()
     label = (payload.label or "").strip()
     if not key:
@@ -1851,12 +2262,25 @@ def update_permission_definition(
     definition_id: int,
     payload: PermissionDefinitionUpdate,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     row = db.query(PermissionDefinition).filter(PermissionDefinition.id == definition_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Permission definition not found")
 
     updates = payload.dict(exclude_unset=True)
+    # Fleet admins only toggle offerings (is_active); master catalog stays global.
+    if set(updates.keys()) <= {"is_active"} and "is_active" in updates:
+        fleet_id = require_fleet_offering_admin_id(scope)
+        offered = bool(updates["is_active"])
+        set_permission_offered(db, fleet_id, row.key, offered)
+        if not offered:
+            revoke_permission_from_managers(db, row.key, admin_id=fleet_id)
+        db.commit()
+        db.refresh(row)
+        return _permission_definition_out(db, row, fleet_id)
+
+    require_global_super_admin_catalog(scope)
     if "key" in updates:
         new_key = (updates["key"] or "").strip()
         if not new_key:
@@ -1905,14 +2329,24 @@ def update_permission_definition(
 
 
 @app.delete("/api/settings/permissions/{definition_id}", response_model=PermissionDefinitionOut)
-def delete_permission_definition(definition_id: int, db: Session = Depends(get_db)):
-    """Soft-delete: sets is_active=false. Hard-delete would leave
-    orphan keys in existing Manager.permissions JSON blobs.
+def delete_permission_definition(definition_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    """Fleet: un-offer this key for the current admin's managers only.
+    Global SA (not acting): soft-delete the master catalog row.
     """
     row = db.query(PermissionDefinition).filter(PermissionDefinition.id == definition_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Permission definition not found")
 
+    fleet_id = scope.stamp_admin_id()
+    if fleet_id is not None:
+        set_permission_offered(db, fleet_id, row.key, False)
+        revoke_permission_from_managers(db, row.key, admin_id=fleet_id)
+        db.commit()
+        db.refresh(row)
+        return _permission_definition_out(db, row, fleet_id)
+
+    require_global_super_admin_catalog(scope)
     row.is_active = False
     revoke_permission_from_managers(db, row.key)
     db.commit()
@@ -1921,10 +2355,14 @@ def delete_permission_definition(definition_id: int, db: Session = Depends(get_d
 
 
 @app.get("/api/settings/alert-types", response_model=list[AlertTypeSettingOut])
-def list_alert_type_settings(db: Session = Depends(get_db)):
+def list_alert_type_settings(db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.require_admin_like()
     ensure_alert_type_settings(db)
     alert_type_settings_cache.refresh(db)
-    return db.query(AlertTypeSetting).order_by(AlertTypeSetting.alert_type.asc()).all()
+    fleet_id = scope.stamp_admin_id()
+    rows = db.query(AlertTypeSetting).order_by(AlertTypeSetting.alert_type.asc()).all()
+    return [_alert_type_setting_out(db, row, fleet_id) for row in rows]
 
 
 @app.patch("/api/settings/alert-types/{alert_type}", response_model=AlertTypeSettingOut)
@@ -1932,6 +2370,7 @@ def update_alert_type_setting(
     alert_type: str,
     payload: AlertTypeSettingUpdate,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     row = db.query(AlertTypeSetting).filter(AlertTypeSetting.alert_type == alert_type).first()
     if not row:
@@ -1941,6 +2380,22 @@ def update_alert_type_setting(
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # Fleet admins toggle offered_to_managers for their fleet only.
+    if set(updates.keys()) <= {"offered_to_managers"} and "offered_to_managers" in updates:
+        fleet_id = require_fleet_offering_admin_id(scope)
+        offered = bool(updates["offered_to_managers"])
+        previously = is_alert_offered(
+            db, fleet_id, row.alert_type, global_offered=bool(row.offered_to_managers),
+        )
+        set_alert_offered(db, fleet_id, row.alert_type, offered)
+        if previously and not offered:
+            revoke_alert_type_from_managers(db, row.alert_type, admin_id=fleet_id)
+        db.commit()
+        db.refresh(row)
+        return _alert_type_setting_out(db, row, fleet_id)
+
+    # Detection / global master fields remain Super Admin only.
+    require_global_super_admin_catalog(scope)
     becoming_unoffered = (
         "offered_to_managers" in updates
         and not updates["offered_to_managers"]
@@ -1955,8 +2410,6 @@ def update_alert_type_setting(
 
     db.commit()
     db.refresh(row)
-    # Take effect on the next raise without waiting for the next poll
-    # cycle's refresh — Settings toggles should apply immediately.
     alert_type_settings_cache.set_enabled(row.alert_type, row.is_enabled)
     return row
 
@@ -2006,6 +2459,7 @@ def _assignment_out(db: Session, assignment: DriverAssignment, driver: Driver | 
 @app.post("/api/drivers", response_model=DriverOut)
 async def create_driver(
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
     name: str = Form(...),
     id_card_number: str = Form(...),
     phone_number: str | None = Form(None),
@@ -2015,7 +2469,9 @@ async def create_driver(
     date_joined: date | None = Form(None),
     license_pic: UploadFile | None = File(None),
     driver_pic: UploadFile | None = File(None),
+    admin_id: int | None = Form(None),
 ):
+    scope.require_admin_like()
     validate_cnic(id_card_number)
 
     existing = db.query(Driver).filter(Driver.id_card_number == id_card_number).first()
@@ -2035,6 +2491,7 @@ async def create_driver(
         date_joined=date_joined,
         license_pic_path=license_pic_path,
         driver_pic_path=driver_pic_path,
+        admin_id=require_create_admin_id(scope, admin_id),
     )
     db.add(driver)
     db.commit()
@@ -2043,13 +2500,21 @@ async def create_driver(
 
 
 @app.get("/api/drivers", response_model=list[DriverOut])
-def list_drivers(db: Session = Depends(get_db)):
-    drivers = db.query(Driver).order_by(Driver.name.asc()).all()
+def list_drivers(
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
+    scope.require_admin_like()
+    query = apply_list_admin_filter(scope, db.query(Driver), Driver.admin_id, admin_id)
+    drivers = query.order_by(Driver.name.asc()).all()
     return [_driver_out(db, d) for d in drivers]
 
 
 @app.get("/api/drivers/{driver_id}", response_model=DriverOut)
-def get_driver(driver_id: int, db: Session = Depends(get_db)):
+def get_driver(driver_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -2057,8 +2522,10 @@ def get_driver(driver_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/drivers/{driver_id}/assignments", response_model=list[DriverAssignmentOut])
-def list_driver_assignments(driver_id: int, db: Session = Depends(get_db)):
+def list_driver_assignments(driver_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Full vehicle assignment history for a driver, newest first."""
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -2070,6 +2537,7 @@ def list_driver_assignments(driver_id: int, db: Session = Depends(get_db)):
 async def update_driver(
     driver_id: int,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
     name: str | None = Form(None),
     id_card_number: str | None = Form(None),
     phone_number: str | None = Form(None),
@@ -2080,6 +2548,7 @@ async def update_driver(
     license_pic: UploadFile | None = File(None),
     driver_pic: UploadFile | None = File(None),
 ):
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -2101,7 +2570,9 @@ async def update_driver(
 
 
 @app.delete("/api/drivers/{driver_id}")
-def delete_driver(driver_id: int, db: Session = Depends(get_db)):
+def delete_driver(driver_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -2115,18 +2586,21 @@ def delete_driver(driver_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/drivers/{driver_id}/assign")
-def assign_driver_to_vehicle(driver_id: int, device_id: int, db: Session = Depends(get_db)):
+def assign_driver_to_vehicle(driver_id: int, device_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Assigns a driver to a vehicle right now. Automatically closes:
     - the driver's previous open assignment (if any), and
     - the target vehicle's previous open assignment (if any, to a
       different driver) — so a vehicle never has two active drivers.
     """
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    assert_same_admin(driver.admin_id, device.admin_id, detail="Driver and vehicle are not in the same fleet")
 
     assignment = driver_service.assign_driver(db, driver_id, device_id)
     return {
@@ -2146,7 +2620,9 @@ def assign_driver_to_vehicle(driver_id: int, device_id: int, db: Session = Depen
 
 
 @app.post("/api/drivers/{driver_id}/unassign")
-def unassign_driver_from_vehicle(driver_id: int, db: Session = Depends(get_db)):
+def unassign_driver_from_vehicle(driver_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -2158,7 +2634,8 @@ def unassign_driver_from_vehicle(driver_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/drivers/{driver_id}/detail")
-def get_driver_detail(driver_id: int, date: str = None, start: str = None, end: str = None, db: Session = Depends(get_db)):
+def get_driver_detail(driver_id: int, date: str = None, start: str = None, end: str = None, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Everything the Driver Detail page needs in one call:
     - driver: profile fields + currently-assigned vehicle
     - assignments: every vehicle this driver was on that overlaps the
@@ -2171,6 +2648,7 @@ def get_driver_detail(driver_id: int, date: str = None, start: str = None, end: 
     Accepts the same single `date` / explicit `start`+`end` range modes
     as /api/report and /api/vehicle-report, defaulting to today (UTC).
     """
+    scope.assert_driver(driver_id)
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -2300,7 +2778,7 @@ def get_driver_detail(driver_id: int, date: str = None, start: str = None, end: 
 # POSITIONS — served from cache, instant
 # ─────────────────────────────────────────
 @app.get("/api/positions")
-async def get_positions():
+async def get_positions(scope: FleetScope = Depends(get_scope)):
     """Current positions of all devices, raw from Traccar (every attribute
     Traccar reports — ignition, motion, battery, adc1, alarm, etc. — is
     included untouched inside each position's `attributes` field)."""
@@ -2313,8 +2791,10 @@ async def get_positions():
 
 
 @app.get("/api/positions/{device_id}")
-async def get_device_position(device_id: int):
+async def get_device_position(device_id: int,
+    scope: FleetScope = Depends(get_scope)):
     """Position of a specific device, from cache."""
+    scope.require_admin_like()
     position = next(
         (p for p in traccar_cache.positions if p.get("deviceId") == device_id),
         None,
@@ -2333,7 +2813,8 @@ async def get_device_position(device_id: int):
 # LIVE — device + position merged, everything in one place
 # ─────────────────────────────────────────
 @app.get("/api/live")
-async def get_live(compact: bool = False, db_id: int | None = None):
+async def get_live(compact: bool = False, db_id: int | None = None,
+    scope: FleetScope = Depends(get_scope)):
     """Every device merged with its latest position in one object —
     this is the 'show me everything Traccar can offer' endpoint.
 
@@ -2346,17 +2827,18 @@ async def get_live(compact: bool = False, db_id: int | None = None):
     db = SessionLocal()
     try:
         if db_id is not None:
+            scope.assert_device(db_id)
             devices = db.query(Device).filter(Device.id == db_id).all()
         else:
-            devices = db.query(Device).all()
+            devices = _scoped_devices_query(scope, db).all()
         traccar_to_db = {d.traccar_device_id: d.id for d in devices}
         devices_by_id = {d.id: d for d in devices}
-        allowed_traccar = set(traccar_to_db.keys()) if db_id is not None else None
+        allowed_traccar = set(traccar_to_db.keys())
 
         enriched = []
         for item in live:
             traccar_id = item["device"]["id"]
-            if allowed_traccar is not None and traccar_id not in allowed_traccar:
+            if traccar_id not in allowed_traccar:
                 continue
             db_device_id = traccar_to_db.get(traccar_id)
             row = dict(item)
@@ -2404,8 +2886,10 @@ async def get_live(compact: bool = False, db_id: int | None = None):
 
 
 @app.get("/api/live/{device_id}")
-async def get_live_device(device_id: int):
+async def get_live_device(device_id: int,
+    scope: FleetScope = Depends(get_scope)):
     """Single device + its latest position merged together."""
+    scope.require_admin_like()
     match = next(
         (m for m in traccar_cache.merged_live_view() if m["device"]["id"] == device_id),
         None,
@@ -2428,6 +2912,7 @@ async def get_route(
     to_time: str,
     max_points: int | None = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
@@ -2483,11 +2968,13 @@ async def get_route(
 # DAILY REPORT — aggregated metrics from the database
 # ─────────────────────────────────────────
 @app.get("/api/report/{device_id}")
-async def get_report(device_id: int, date: str = None, start: str = None, end: str = None):
+async def get_report(device_id: int, date: str = None, start: str = None, end: str = None,
+    scope: FleetScope = Depends(get_scope)):
     """Report for a device — either a single day (`date`, the original
     behavior) or an explicit `start`/`end` datetime range (new). Defaults
     to today (UTC) if nothing is given.
     """
+    scope.require_admin_like()
     start_dt, end_dt, label, price_lookup_date = _resolve_time_range(date, start, end)
 
     db = SessionLocal()
@@ -2566,7 +3053,7 @@ async def get_vehicle_report(
     start: str = None,
     end: str = None,
     summary: bool = False,
-):
+    scope: FleetScope = Depends(get_scope)):
     """Everything the Vehicle Report page needs in one call:
     - device: fleet metadata (plate, vehicle type, fuel type name, etc.)
     - report: the same metrics as /api/report/{device_id}, plus
@@ -2776,7 +3263,8 @@ async def get_vehicle_report(
 
 
 @app.get("/api/vehicle-report/{device_id}/trend")
-def get_vehicle_trend(device_id: int, days: int = 7, db: Session = Depends(get_db)):
+def get_vehicle_trend(device_id: int, days: int = 7, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Compact daily distance series for the last `days` days
     (oldest first, including today) — feeds the small trend sparkline on
     vehicle detail pages.
@@ -2822,14 +3310,17 @@ def list_alerts(
     start: str = None,
     end: str = None,
     limit: int = 200,
+    admin_id: int | None = Query(None),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Alert feed, newest first. Filter by severity ('critical' |
     'warning' | 'info'), device_id, resolved state, and/or a single
     `date` or explicit `start`/`end` range (same convention as
     /api/report and /api/trips). No date params -> no date filtering,
     matching the original behavior."""
-    query = db.query(DeviceAlert)
+    scope.require_admin_like()
+    query = _filter_alerts_query(scope, db.query(DeviceAlert), admin_id)
     if severity is not None:
         query = query.filter(DeviceAlert.severity == severity)
     if device_id is not None:
@@ -2854,11 +3345,14 @@ def list_alerts(
 def get_alerts_summary(
     device_id: int = None,
     period: str = "day",
+    admin_id: int | None = Query(None),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Counts of alerts in the selected dashboard period (PKT window), by severity
     — feeds the Alerts KPI on the Dashboard. Pass device_id to
     scope the counts to a single vehicle instead of the whole fleet."""
+    scope.require_admin_like()
     if period not in TREND_PERIOD_DAYS:
         raise HTTPException(
             status_code=400,
@@ -2866,7 +3360,7 @@ def get_alerts_summary(
         )
 
     start_utc, end_utc = period_window_utc(period)
-    query = db.query(DeviceAlert)
+    query = _filter_alerts_query(scope, db.query(DeviceAlert), admin_id)
     if start_utc is not None:
         query = query.filter(DeviceAlert.triggered_at >= start_utc)
     if end_utc is not None:
@@ -2891,10 +3385,12 @@ def get_alerts_summary(
 
 
 @app.patch("/api/alerts/{alert_id}/resolve", response_model=AlertOut)
-def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
+def resolve_alert(alert_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Manually mark an alert resolved (e.g. an operator acknowledging
     it from the Alert page), independent of the auto-resolve logic in
     alert_monitor.py for conditions that clear on their own."""
+    scope.require_admin_like()
     alert = db.query(DeviceAlert).filter(DeviceAlert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -2913,11 +3409,18 @@ def resolve_alert(alert_id: int, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 
 @app.get("/api/admin/dashboard/summary", response_model=AdminDashboardSummaryOut)
-def get_admin_dashboard_summary(period: str = "day", db: Session = Depends(get_db)):
+def get_admin_dashboard_summary(
+    period: str = "day",
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
     """Fleet-wide aggregates the Admin Dashboard needs that no existing
     endpoint provides. Vehicle moving/idle/parked/offline counts stay
     client-side from /api/live; trip stats respect `period`; driver/
-    maintenance snapshots stay current."""
+    maintenance snapshots stay current. Super Admin may pass `admin_id`
+    to scope stats to one fleet."""
+    scope.require_admin_like()
     if period not in TREND_PERIOD_DAYS:
         raise HTTPException(
             status_code=400,
@@ -2925,31 +3428,69 @@ def get_admin_dashboard_summary(period: str = "day", db: Session = Depends(get_d
         )
 
     today = date.today()
-    today_stats = aggregate_trips_for_period(db, period=period)
-    drivers_on_trip, drivers_available = count_assigned_driver_buckets(db)
+    fleet_admin_id = _dashboard_fleet_admin_id(scope, admin_id)
+    device_ids = _dashboard_device_ids(scope, db, admin_id)
+
+    today_stats = aggregate_trips_for_period(db, period=period, device_ids=device_ids)
+    drivers_on_trip, drivers_available = count_assigned_driver_buckets(
+        db, device_ids=device_ids,
+    )
 
     vehicles_due_maintenance, vehicles_overdue_maintenance = (
-        maintenance_service.count_due_vehicles(db)
+        maintenance_service.count_due_vehicles(db, device_ids=device_ids)
     )
 
     year_start = date(today.year, 1, 1)
-    maintenance_records_ytd = (
-        db.query(func.count(MaintenanceRecord.id))
-        .filter(
-            MaintenanceRecord.record_date >= year_start,
-            MaintenanceRecord.is_baseline.is_(False),
-        )
-        .scalar()
-        or 0
+    ytd_query = db.query(func.count(MaintenanceRecord.id)).filter(
+        MaintenanceRecord.record_date >= year_start,
+        MaintenanceRecord.is_baseline.is_(False),
     )
+    if device_ids is not None:
+        if not device_ids:
+            maintenance_records_ytd = 0
+        else:
+            maintenance_records_ytd = (
+                ytd_query.filter(MaintenanceRecord.device_id.in_(device_ids)).scalar() or 0
+            )
+    else:
+        maintenance_records_ytd = ytd_query.scalar() or 0
 
-    drivers_total = db.query(func.count(Driver.id)).scalar() or 0
-    drivers_active = (
-        db.query(func.count(Driver.id)).filter(Driver.status == "active").scalar() or 0
-    )
-    drivers_on_leave = (
-        db.query(func.count(Driver.id)).filter(Driver.status == "on_leave").scalar() or 0
-    )
+    def _scoped_driver_query():
+        q = db.query(Driver)
+        if fleet_admin_id is not None:
+            q = q.filter(Driver.admin_id == fleet_admin_id)
+        return q
+
+    def _scoped_user_query():
+        q = db.query(User)
+        if fleet_admin_id is not None:
+            q = q.filter(User.admin_id == fleet_admin_id)
+        return q
+
+    def _scoped_device_query():
+        q = db.query(Device)
+        if fleet_admin_id is not None:
+            q = q.filter(Device.admin_id == fleet_admin_id)
+        return q
+
+    drivers_total = _scoped_driver_query().count()
+    drivers_active = _scoped_driver_query().filter(Driver.status == "active").count()
+    drivers_on_leave = _scoped_driver_query().filter(Driver.status == "on_leave").count()
+
+    if fleet_admin_id is not None:
+        user_ids = [row[0] for row in _scoped_user_query().with_entities(User.id).all()]
+        managers_count = (
+            (
+                db.query(func.count(Manager.id))
+                .filter(Manager.user_id.in_(user_ids))
+                .scalar()
+                or 0
+            )
+            if user_ids
+            else 0
+        )
+    else:
+        managers_count = db.query(func.count(Manager.id)).scalar() or 0
 
     return AdminDashboardSummaryOut(
         trips_today=today_stats.trips_today,
@@ -2968,55 +3509,62 @@ def get_admin_dashboard_summary(period: str = "day", db: Session = Depends(get_d
         drivers_on_trip=drivers_on_trip,
         drivers_on_leave=drivers_on_leave,
         drivers_available=drivers_available,
-        user_count=db.query(func.count(User.id)).scalar() or 0,
-        managers_count=db.query(func.count(Manager.id)).scalar() or 0,
+        user_count=_scoped_user_query().count(),
+        managers_count=managers_count,
         users_with_vehicles=(
-            db.query(func.count(func.distinct(Device.user_id)))
+            _scoped_device_query()
             .filter(Device.user_id.isnot(None))
+            .with_entities(func.count(func.distinct(Device.user_id)))
             .scalar()
             or 0
         ),
-        users_unassigned=(
-            db.query(func.count(User.id))
-            .filter(User.manager_id.is_(None))
-            .scalar()
-            or 0
-        ),
+        users_unassigned=_scoped_user_query().filter(User.manager_id.is_(None)).count(),
     )
 
 
 @app.get("/api/admin/dashboard/trends", response_model=DashboardTrendsOut)
-def get_admin_dashboard_trends(period: str = "month", db: Session = Depends(get_db)):
+def get_admin_dashboard_trends(
+    period: str = "month",
+    admin_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
+):
     """Pre-bucketed fleet distance/fuel series for the dashboard chart.
 
     Do not use GET /api/trips for this — that path recalculates GPS
     metrics per trip and is far too slow for a 30-day chart.
     """
+    scope.require_admin_like()
     if period not in TREND_PERIOD_DAYS:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid period {period!r}. Expected one of: {', '.join(TREND_PERIOD_DAYS)}",
         )
+    device_ids = _dashboard_device_ids(scope, db, admin_id)
     return DashboardTrendsOut(
         period=period,
-        points=get_dashboard_trend_points(db, period),
+        points=get_dashboard_trend_points(db, period, device_ids=device_ids),
     )
 
 
 @app.get("/api/admin/dashboard/maintenance-trends", response_model=DashboardMaintenanceTrendsOut)
 def get_admin_dashboard_maintenance_trends(
     period: str = "month",
+    admin_id: int | None = Query(None),
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Daily maintenance visits and cost for the dashboard bar chart."""
+    scope.require_admin_like()
     if period not in TREND_PERIOD_DAYS:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid period {period!r}. Expected one of: {', '.join(TREND_PERIOD_DAYS)}",
         )
+    device_ids = _dashboard_device_ids(scope, db, admin_id)
     return DashboardMaintenanceTrendsOut(
         period=period,
-        points=get_dashboard_maintenance_points(db, period),
+        points=get_dashboard_maintenance_points(db, period, device_ids=device_ids),
     )
 
 
@@ -3032,11 +3580,13 @@ def _get_device_or_404(db: Session, device_id: int) -> Device:
 
 
 @app.get("/api/maintenance/items", response_model=list[MaintenanceItemOut])
-def list_maintenance_items(db: Session = Depends(get_db)):
+def list_maintenance_items(db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Static catalog list, active items only, ordered by sort_order.
     Used for reference/admin — the per-vehicle applicability/status a
     device's Maintenance page actually renders comes from the
     /status endpoint below, not this one."""
+    scope.require_admin_like()
     return (
         db.query(MaintenanceItem)
         .filter(MaintenanceItem.is_active.is_(True))
@@ -3046,12 +3596,14 @@ def list_maintenance_items(db: Session = Depends(get_db)):
 
 
 @app.get("/api/maintenance/devices/{device_id}/status", response_model=MaintenanceStatusOut)
-def get_maintenance_status(device_id: int, db: Session = Depends(get_db)):
+def get_maintenance_status(device_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Main data source for the Maintenance page. has_baseline=False ->
     frontend shows the baseline setup form instead of the normal page;
     `items` is still populated in that case (each with status
     "no_baseline") so the baseline form can render the same item list
     as a normal maintenance entry."""
+    scope.require_admin_like()
     device = _get_device_or_404(db, device_id)
     status = maintenance_service.get_status_for_device(db, device)
     return MaintenanceStatusOut(
@@ -3065,10 +3617,12 @@ def get_maintenance_status(device_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/maintenance/devices/{device_id}/engine-hours", response_model=DeviceOut)
-def update_engine_hours(device_id: int, payload: MaintenanceEngineHoursUpdate, db: Session = Depends(get_db)):
+def update_engine_hours(device_id: int, payload: MaintenanceEngineHoursUpdate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Manual correction/set of Device.engine_hours — for devices that
     never report it via Traccar (mobile), or to fix a bad auto-filled
     value. See services/position_writer.py for the auto-fill path."""
+    scope.require_admin_like()
     device = _get_device_or_404(db, device_id)
     device.engine_hours = payload.engine_hours
     db.commit()
@@ -3154,7 +3708,8 @@ def _records_out(db: Session, records: list[MaintenanceRecord]) -> list[dict]:
 
 
 @app.post("/api/maintenance/devices/{device_id}/records", response_model=MaintenanceRecordOut)
-def submit_maintenance_record(device_id: int, payload: MaintenanceRecordCreate, db: Session = Depends(get_db)):
+def submit_maintenance_record(device_id: int, payload: MaintenanceRecordCreate, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Submits a maintenance visit — the very first one for a device is
     the mandatory baseline. Skipping items is always allowed EXCEPT on
     baseline, where the backend auto-creates a line for every
@@ -3162,6 +3717,7 @@ def submit_maintenance_record(device_id: int, payload: MaintenanceRecordCreate, 
     odometer/engine_hours as that line's starting point (unchecked,
     price=0) — this is what guarantees every applicable item has a
     due-status starting point once baseline is done."""
+    scope.require_admin_like()
     device = _get_device_or_404(db, device_id)
 
     is_baseline = (
@@ -3247,9 +3803,11 @@ def list_maintenance_records(
     start: str = None,
     end: str = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """History for the Report page. `start`/`end` are optional ISO dates
     — omit both for all-time. Newest first."""
+    scope.require_admin_like()
     device = _get_device_or_404(db, device_id)
 
     query = db.query(MaintenanceRecord).filter(MaintenanceRecord.device_id == device_id)
@@ -3276,12 +3834,14 @@ def get_maintenance_due_report(
     start: str = None,
     end: str = None,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Maintenance Due Report data — one row per stored daily snapshot
     (see maintenance_service.ensure_daily_snapshot, run every poll
     cycle), columns are the device's applicable maintenance items.
     `start`/`end` are optional ISO dates, same convention as the
     /records endpoint above (end exclusive) — omit both for all-time."""
+    scope.require_admin_like()
     device = _get_device_or_404(db, device_id)
 
     start_date = None
@@ -3301,9 +3861,11 @@ def upsert_vehicle_maintenance_setting(
     item_id: int,
     payload: VehicleMaintenanceSettingUpdate,
     db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope),
 ):
     """Upserts a per-vehicle manual interval override — takes priority
     over the type default for this device+item."""
+    scope.require_admin_like()
     _get_device_or_404(db, device_id)
     item = db.query(MaintenanceItem).filter(MaintenanceItem.id == item_id).first()
     if not item:
@@ -3326,9 +3888,11 @@ def upsert_vehicle_maintenance_setting(
 
 
 @app.delete("/api/maintenance/devices/{device_id}/settings/{item_id}")
-def delete_vehicle_maintenance_setting(device_id: int, item_id: int, db: Session = Depends(get_db)):
+def delete_vehicle_maintenance_setting(device_id: int, item_id: int, db: Session = Depends(get_db),
+    scope: FleetScope = Depends(get_scope)):
     """Removes the override, reverting the item back to its type-default
     interval for this vehicle."""
+    scope.require_admin_like()
     setting = (
         db.query(VehicleMaintenanceSetting)
         .filter_by(device_id=device_id, item_id=item_id)

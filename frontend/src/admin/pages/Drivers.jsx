@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus,
@@ -12,9 +12,6 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  ChevronsLeft,
-  ChevronsRight,
-  ChevronLeft,
 } from 'lucide-react'
 import api from '../../api'
 import {
@@ -28,15 +25,10 @@ import AddDriverModal from '../components/AddDriverModal'
 import EditDriverModal from '../components/EditDriverModal'
 import AssignVehicleModal from '../components/AssignVehicleModal'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import { userPicSrc } from '../utils/userPic'
 import '../styles/admin-drivers.css'
-
-const MIN_PAGE_SIZE = 1
-const FALLBACK_PAGE_SIZE = 8
-const FALLBACK_ROW_HEIGHT = 65
-const FALLBACK_HEAD_HEIGHT = 48
-/** Matches `.ad-cards` / table swap in admin-drivers.css */
-const MOBILE_CARDS_MQ = '(max-width: 768px)'
 
 const STATUS_LABEL = {
   active: 'Active',
@@ -54,59 +46,6 @@ function SortIcon({ active, dir }) {
   return <ChevronDown size={14} className="ad-sort-icon" />
 }
 
-function DriversPagination({ page, pageCount, onPageChange }) {
-  if (!pageCount || pageCount < 1) return null
-
-  return (
-    <nav className="ad-pagination" aria-label="Pagination">
-      <button
-        type="button"
-        className="ad-page-btn"
-        disabled={page <= 1}
-        aria-label="First page"
-        onClick={() => onPageChange(1)}
-      >
-        <ChevronsLeft size={14} />
-      </button>
-      <button
-        type="button"
-        className="ad-page-btn"
-        disabled={page <= 1}
-        aria-label="Previous page"
-        onClick={() => onPageChange(page - 1)}
-      >
-        <ChevronLeft size={14} />
-      </button>
-      <button
-        type="button"
-        className="ad-page-btn ad-page-btn--active"
-        aria-current="page"
-        onClick={() => onPageChange(page)}
-      >
-        {page}
-      </button>
-      <button
-        type="button"
-        className="ad-page-btn"
-        disabled={page >= pageCount}
-        aria-label="Next page"
-        onClick={() => onPageChange(page + 1)}
-      >
-        <ChevronRight size={14} />
-      </button>
-      <button
-        type="button"
-        className="ad-page-btn"
-        disabled={page >= pageCount}
-        aria-label="Last page"
-        onClick={() => onPageChange(pageCount)}
-      >
-        <ChevronsRight size={14} />
-      </button>
-    </nav>
-  )
-}
-
 function DriverStatus({ status }) {
   const key = status === 'on_leave' || status === 'inactive' ? status : 'active'
   return (
@@ -120,6 +59,7 @@ function DriverStatus({ status }) {
 const Drivers = () => {
   const navigate = useNavigate()
   const { basePath, apiFor, can, isManager } = usePanelScope()
+  const saListParams = useSaAdminListParams()
   const canViewDrivers = can('driver_management')
   const canManage = can('driver_management')
 
@@ -127,13 +67,8 @@ const Drivers = () => {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(FALLBACK_PAGE_SIZE)
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
-  const [isMobile, setIsMobile] = useState(() => (
-    typeof window !== 'undefined' ? window.matchMedia(MOBILE_CARDS_MQ).matches : false
-  ))
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
@@ -142,15 +77,6 @@ const Drivers = () => {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState(null)
-  const tableWrapRef = useRef(null)
-
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_CARDS_MQ)
-    const sync = () => setIsMobile(mq.matches)
-    sync()
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
-  }, [])
 
   const loadDrivers = useCallback(async () => {
     if (!canViewDrivers) {
@@ -160,14 +86,14 @@ const Drivers = () => {
     }
     setLoading(true)
     try {
-      const res = await api.get(apiFor('/drivers', '/api/drivers'))
+      const res = await api.get(apiFor('/drivers', '/api/drivers'), { params: saListParams })
       setDrivers(res.data)
     } catch (err) {
       console.error('Failed to load drivers:', err)
     } finally {
       setLoading(false)
     }
-  }, [apiFor, canViewDrivers])
+  }, [apiFor, canViewDrivers, saListParams])
 
   useEffect(() => {
     loadDrivers()
@@ -177,10 +103,6 @@ const Drivers = () => {
     const handle = setTimeout(() => setSearchQuery(search), 250)
     return () => clearTimeout(handle)
   }, [search])
-
-  useEffect(() => {
-    setPage(1)
-  }, [searchQuery])
 
   const openDetail = (driverId) => navigate(`${basePath}/drivers/${driverId}`)
 
@@ -212,43 +134,7 @@ const Drivers = () => {
     return copy
   }, [filtered, sortKey, sortDir])
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
-  // Mobile: full list in page scroll (no pagination). Desktop: sliced page.
-  const listItems = isMobile ? sorted : sorted.slice((page - 1) * pageSize, page * pageSize)
-
-  useEffect(() => {
-    const wrap = tableWrapRef.current
-    if (!wrap) return undefined
-
-    const measure = () => {
-      // Table is hidden on mobile; page size unused while isMobile shows the full list.
-      if (window.matchMedia(MOBILE_CARDS_MQ).matches) {
-        setPageSize((prev) => (prev === FALLBACK_PAGE_SIZE ? prev : FALLBACK_PAGE_SIZE))
-        return
-      }
-      const thead = wrap.querySelector('thead')
-      const row = wrap.querySelector('tbody tr')
-      const headH = thead?.getBoundingClientRect().height || FALLBACK_HEAD_HEIGHT
-      const rowH = row?.getBoundingClientRect().height || FALLBACK_ROW_HEIGHT
-      if (rowH <= 0) return
-      const next = Math.max(MIN_PAGE_SIZE, Math.floor((wrap.clientHeight - headH) / rowH))
-      setPageSize((prev) => (prev === next ? prev : next))
-    }
-
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(wrap)
-    const mq = window.matchMedia(MOBILE_CARDS_MQ)
-    mq.addEventListener('change', measure)
-    return () => {
-      observer.disconnect()
-      mq.removeEventListener('change', measure)
-    }
-  }, [loading, sorted.length])
-
-  useEffect(() => {
-    if (!isMobile && page > pageCount) setPage(pageCount)
-  }, [page, pageCount, isMobile])
+  const listItems = sorted
 
   const toggleSort = (key) => {
     if (sortKey === key) {
@@ -369,6 +255,7 @@ const Drivers = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <AdminFilterBar inline className="ad-admin-filter" />
           {canManage && (
             <button
               type="button"
@@ -393,7 +280,7 @@ const Drivers = () => {
           </div>
         ) : (
           <div className="ad-table-section">
-            <div className="ad-table-wrap" ref={tableWrapRef}>
+            <div className="ad-table-wrap">
               <table className="ad-table">
                 <thead>
                   <tr>
@@ -647,15 +534,6 @@ const Drivers = () => {
               ))}
             </div>
 
-            {!isMobile && (
-              <div className="ad-footer">
-                <span className="ad-footer-meta">
-                  Showing {(page - 1) * pageSize + 1} to{' '}
-                  {Math.min(page * pageSize, sorted.length)} of {sorted.length}
-                </span>
-                <DriversPagination page={page} pageCount={pageCount} onPageChange={setPage} />
-              </div>
-            )}
           </div>
         )}
       </div>

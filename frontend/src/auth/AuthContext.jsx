@@ -8,6 +8,8 @@ import {
   writeAuthState,
   writeToken,
 } from './authStorage'
+import { clearAllScopedCaches } from '../shared/clearScopedCaches'
+import { ACTING_ADMIN_CHANGED_EVENT } from './actingAdminEvents'
 
 const AuthContext = createContext({
   loading: true,
@@ -37,6 +39,7 @@ const persistSession = (data) => {
 }
 
 const routeForRole = (role, managerId) => {
+  if (role === 'super_admin') return '/super-admin/dashboard'
   if (role === 'admin') return '/admin/dashboard'
   if (role === 'manager' && managerId) return `/manager/${managerId}/dashboard`
   return '/user/dashboard'
@@ -101,6 +104,7 @@ export const AuthProvider = ({ children }) => {
   }, [applySession])
 
   const logout = useCallback((redirectTo) => {
+    clearAllScopedCaches()
     clearAuth()
     applySession(null)
     if (redirectTo) navigate(redirectTo, { replace: true })
@@ -119,7 +123,8 @@ export const AuthProvider = ({ children }) => {
     const res = await authApi.post('/api/auth/admin/login', { username, password })
     persistSession(res.data)
     applySession(readAuthState())
-    navigate('/admin/dashboard', { replace: true })
+    const dest = routeForRole(res.data.role, res.data.manager_id)
+    navigate(dest, { replace: true })
     return res.data
   }, [applySession, navigate])
 
@@ -163,12 +168,18 @@ export const AuthProvider = ({ children }) => {
   }, [session, applySession])
 
   useEffect(() => {
+    const onActingAdminChanged = () => clearAllScopedCaches()
+    window.addEventListener(ACTING_ADMIN_CHANGED_EVENT, onActingAdminChanged)
+    return () => window.removeEventListener(ACTING_ADMIN_CHANGED_EVENT, onActingAdminChanged)
+  }, [])
+
+  useEffect(() => {
     const onUnauthorized = (event) => {
       // Role is captured by the axios interceptor before clearAuth().
       const role = event?.detail?.role ?? null
       clearAuth()
       applySession(null)
-      navigate(role === 'admin' ? '/admin/login' : '/login', { replace: true })
+      navigate(role === 'admin' || role === 'super_admin' ? '/admin/login' : '/login', { replace: true })
     }
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)
     return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized)

@@ -9,6 +9,7 @@ import {
   Car,
   Pencil,
   Trash2,
+  AlertTriangle,
 } from 'lucide-react'
 import api from '../../api'
 import {
@@ -28,6 +29,8 @@ import {
   VEHICLE_STATUS_FILTERS,
 } from '../../user/utils/vehicleStatus'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import { userPicSrc } from '../utils/userPic'
 import { vehiclePhotoSrc } from '../../user/utils/vehiclePhoto'
 import '../styles/all-vehicles.css'
@@ -59,15 +62,26 @@ const assignedDisplay = (row) => {
     return {
       name: row.owner.full_name || row.owner.username,
       src: userPicSrc(row.owner.pic_url),
+      needsUser: false,
     }
   }
   if (row.active_driver) {
     return {
       name: row.active_driver.name,
       src: userPicSrc(row.active_driver.pic_url),
+      needsUser: !row.owner,
     }
   }
-  return { name: 'Unassigned', src: null }
+  return { name: 'Unassigned', src: null, needsUser: true }
+}
+
+function UserRequiredBadge() {
+  return (
+    <span className="av-user-required" title="User required">
+      <AlertTriangle size={13} aria-hidden />
+      User required
+    </span>
+  )
 }
 
 function VehicleStatusPill({ status }) {
@@ -113,6 +127,7 @@ const buildDeleteMessage = (row) => {
 const AllVehicles = () => {
   const navigate = useNavigate()
   const { basePath, apiFor, can } = usePanelScope()
+  const saListParams = useSaAdminListParams()
   const canViewFleet = can('live_tracking')
   const canManageVehicles = can('vehicle_management')
   const canAddUser = can('user_management')
@@ -141,14 +156,20 @@ const AllVehicles = () => {
     inflightRef.current = true
     try {
       const res = await api.get(apiFor('/vehicles', '/api/live'))
-      setLive(res.data.live || [])
+      let rows = res.data.live || []
+      if (saListParams.admin_id != null) {
+        const devRes = await api.get('/api/fleet/devices', { params: saListParams })
+        const allowed = new Set((devRes.data || []).map((d) => d.id))
+        rows = rows.filter((row) => allowed.has(row.db_id))
+      }
+      setLive(rows)
     } catch (err) {
       console.error('Failed to load vehicles:', err)
     } finally {
       inflightRef.current = false
       setLoading(false)
     }
-  }, [apiFor, canViewFleet])
+  }, [apiFor, canViewFleet, saListParams])
 
   useEffect(() => {
     loadLive()
@@ -288,6 +309,8 @@ const AllVehicles = () => {
             />
           </div>
 
+          <AdminFilterBar inline className="av-vehicles-admin-filter" />
+
           <div className="av-vehicles-toolbar-actions">
             <button
               type="button"
@@ -312,7 +335,7 @@ const AllVehicles = () => {
                 className="av-vehicles-new-btn"
                 onClick={() => setShowCreateModal(true)}
               >
-                Add user
+                Add user & vehicle
               </button>
             )}
           </div>
@@ -393,6 +416,7 @@ const AllVehicles = () => {
                                 src={assigned.src}
                               />
                               <span>{assigned.name}</span>
+                              {assigned.needsUser && <UserRequiredBadge />}
                             </span>
                           </td>
                           <td>
@@ -488,6 +512,7 @@ const AllVehicles = () => {
                                 src={assigned.src}
                               />
                               <span>{assigned.name}</span>
+                              {assigned.needsUser && <UserRequiredBadge />}
                             </span>
                           </span>
                         </div>

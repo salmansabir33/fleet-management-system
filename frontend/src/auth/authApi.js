@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { API_BASE_URL } from '../api'
+import { readActingAdminId } from './actingAdminStorage'
 import { clearAuth, readAuthState, readToken } from './authStorage'
 
 export const AUTH_UNAUTHORIZED_EVENT = 'ft:auth-unauthorized'
@@ -12,6 +13,13 @@ authApi.interceptors.request.use((config) => {
   const token = readToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  const authState = readAuthState()
+  if (authState?.role === 'super_admin') {
+    const actingAdminId = readActingAdminId()
+    if (actingAdminId != null) {
+      config.headers['X-Acting-Admin-Id'] = String(actingAdminId)
+    }
   }
   return config
 })

@@ -30,3 +30,8 @@ export const setCachedRoute = (key, value) => touch(routeCache, key, value)
 
 export const getCachedTrips = (key) => tripsCache.get(key)
 export const setCachedTrips = (key, value) => touch(tripsCache, key, value)
+
+export function clearPlaybackCaches() {
+  routeCache.clear()
+  tripsCache.clear()
+}

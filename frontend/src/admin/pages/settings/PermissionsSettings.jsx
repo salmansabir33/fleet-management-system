@@ -9,7 +9,7 @@ import {
   EmptyState,
 } from '../../../shared/components'
 
-const PermissionsSettings = () => {
+const PermissionsSettings = ({ readOnly = false }) => {
   const { tokens } = useTheme()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,6 +34,7 @@ const PermissionsSettings = () => {
   }, [])
 
   const handleToggle = async (row, nextActive) => {
+    if (readOnly) return
     setTogglingId(row.id)
     setError(null)
     const previous = rows
@@ -74,8 +75,9 @@ const PermissionsSettings = () => {
 
       <Card title="Manager permission options">
         <p className="ft-admin-settings-card-hint">
-          These switches choose which options appear when you assign permissions to a manager.
-          Turning one off hides it from that modal and removes it from every manager immediately.
+          {readOnly
+            ? 'Permission options available when assigning access to a manager in this fleet.'
+            : 'These switches choose which options appear when you assign permissions to a manager in this fleet. Turning one off hides it from that modal and removes it from this fleet’s managers immediately.'}
         </p>
         {rows.length === 0 ? (
           <EmptyState title="No permission keys yet." />
@@ -89,7 +91,7 @@ const PermissionsSettings = () => {
                 </div>
                 <Switch
                   checked={!!row.is_active}
-                  disabled={togglingId === row.id}
+                  disabled={readOnly || togglingId === row.id}
                   onChange={(e) => handleToggle(row, e.target.checked)}
                   aria-label={`Offer ${row.label} to managers`}
                 />

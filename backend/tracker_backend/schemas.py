@@ -2,7 +2,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, field_serializer, field_validator
+from pydantic import BaseModel, field_serializer, field_validator, model_validator
 
 from tracker_backend.services.password_policy import validate_new_user_password
 
@@ -33,7 +33,7 @@ class DeviceCreate(BaseModel):
     speed_limit_kmh: Optional[float] = None
     harsh_brake_delta_kmh: Optional[float] = None
     harsh_accel_delta_kmh: Optional[float] = None
-    user_id: Optional[int] = None          # NEW — links this vehicle to its owner (User)
+    user_id: int                           # owner User — required at create
 
 
 class DeviceUpdate(BaseModel):
@@ -48,6 +48,33 @@ class DeviceUpdate(BaseModel):
     harsh_brake_delta_kmh: Optional[float] = None
     harsh_accel_delta_kmh: Optional[float] = None
     user_id: Optional[int] = None          # NEW
+
+
+class ClaimUserCreate(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def _validate_new_user_password(cls, value: str) -> str:
+        return validate_new_user_password(value)
+
+
+class DeviceClaimBody(BaseModel):
+    user_id: Optional[int] = None
+    create_user: Optional[ClaimUserCreate] = None
+    name: Optional[str] = None  # optional vehicle rename
+    admin_id: Optional[int] = None  # SA claiming quarantine (admin_id null) devices
+
+    @model_validator(mode="after")
+    def _exactly_one_owner_source(self) -> "DeviceClaimBody":
+        has_user = self.user_id is not None
+        has_create = self.create_user is not None
+        if has_user == has_create:
+            raise ValueError("Exactly one of user_id or create_user is required")
+        return self
 
 
 class DeviceOut(BaseModel):
@@ -67,6 +94,7 @@ class DeviceOut(BaseModel):
     harsh_brake_delta_kmh: Optional[float] = None
     harsh_accel_delta_kmh: Optional[float] = None
     user_id: Optional[int] = None          # NEW
+    admin_id: Optional[int] = None
 
     # NEW — populated by the endpoint (not a column on Device) when the
     # owning User is loaded, so the frontend doesn't need a second call
@@ -108,6 +136,7 @@ class FuelPriceOut(BaseModel):
     price_per_liter: float
     effective_date_start: date
     effective_date_end: Optional[date] = None
+    admin_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -118,6 +147,7 @@ class GeofenceCreate(BaseModel):
     center_lat: float
     center_lon: float
     radius_meters: float
+    admin_id: Optional[int] = None
 
 
 class GeofenceUpdate(BaseModel):
@@ -133,6 +163,7 @@ class GeofenceOut(BaseModel):
     center_lat: float
     center_lon: float
     radius_meters: float
+    admin_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -152,6 +183,7 @@ class RouteCreate(BaseModel):
     direction_label: Optional[str] = None
     waypoints: list[RoutePoint]
     tolerance_meters: Optional[float] = 400
+    admin_id: Optional[int] = None
 
 
 class RoutePreviewOut(BaseModel):
@@ -185,6 +217,7 @@ class RouteListOut(BaseModel):
     id: int
     name: str
     direction_label: Optional[str] = None
+    admin_id: Optional[int] = None
     vehicle_count: int = 0
     assigned_vehicles: list[RouteAssignedVehicleWithDriverOut] = []
     created_at: Optional[datetime] = None
@@ -517,6 +550,7 @@ class UserCreate(BaseModel):
     password: str
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    admin_id: Optional[int] = None
 
     @field_validator("password")
     @classmethod
@@ -585,6 +619,7 @@ class UserOut(BaseModel):
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
     manager_id: Optional[int] = None
+    admin_id: Optional[int] = None
     is_manager: bool = False   # True if this user has ALSO been promoted to Manager
     has_password: bool = False
     pic_url: Optional[str] = None
@@ -649,6 +684,7 @@ class ManagerOut(BaseModel):
     username: str
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
+    admin_id: Optional[int] = None
     pic_url: Optional[str] = None
     permissions: dict[str, bool] = {}
     notification_prefs: dict[str, bool] = {}
@@ -771,6 +807,7 @@ class DriverOut(BaseModel):
     date_joined: Optional[date] = None
     license_pic_path: Optional[str] = None
     driver_pic_path: Optional[str] = None
+    admin_id: Optional[int] = None
 
     # NEW — populated by the endpoint (not a column on Driver), from the
     # driver's currently-open DriverAssignment, if any.

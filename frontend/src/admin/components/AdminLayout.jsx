@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useBasePath } from '../../shared/hooks/useBasePath'
 import { LogOut, RefreshCw } from 'lucide-react'
 import api from '../../api'
 import { useAuth } from '../../auth/AuthContext'
@@ -32,14 +33,15 @@ import {
   ADMIN_MOBILE_MORE_NAV as MOBILE_MORE_NAV,
 } from '../navItems'
 
-const ROLE_LABEL = 'Super Administrator'
 const DISPLAY_NAME = 'Admin'
 const EXPANDED_SIDEBAR_WIDTH = 248
 
 const AdminLayout = () => {
   const location = useLocation()
   const navigate = useNavigate()
+  const basePath = useBasePath()
   const { logout, picUrl, fullName, username } = useAuth()
+  const roleLabel = 'Administrator'
   const displayName = fullName || username || DISPLAY_NAME
   const avatarSrc = userPicSrc(picUrl)
   const [alerts, setAlerts] = useState([])
@@ -104,13 +106,16 @@ const AdminLayout = () => {
 
   const showLabels = expanded || isMobile
 
-  const pageTitle = /^\/admin\/users\/\d+/.test(location.pathname)
+  const escapedBase = basePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pageTitle = new RegExp(`^${escapedBase}/users/\\d+`).test(location.pathname)
     ? null
-    : /^\/admin\/drivers(\/|$)/.test(location.pathname)
+    : new RegExp(`^${escapedBase}/drivers(/|$)`).test(location.pathname)
       ? null
-      : /^\/admin\/vehicles\/\d+/.test(location.pathname)
+      : new RegExp(`^${escapedBase}/vehicles/\\d+`).test(location.pathname)
         ? 'Vehicle Detail'
         : resolvePageTitle(location.pathname, MAIN_NAV)
+  const mapPath = `${basePath}/map`
+  const settingsPath = `${basePath}/settings`
   const sidebarWidth = isMobile ? 280 : (expanded ? EXPANDED_SIDEBAR_WIDTH : 64)
 
   if (isMobile) {
@@ -140,9 +145,9 @@ const AdminLayout = () => {
             profileMenu={(
               <ProfileMenu
                 name={displayName}
-                roleLabel={ROLE_LABEL}
+                roleLabel={roleLabel}
                 avatarSrc={avatarSrc}
-                settingsPath="/admin/settings"
+                settingsPath={settingsPath}
                 onLogout={handleLogout}
               />
             )}
@@ -232,7 +237,7 @@ const AdminLayout = () => {
 
           <ShellSidebarFooter
             name={displayName}
-            roleLabel={ROLE_LABEL}
+            roleLabel={roleLabel}
             avatarSrc={avatarSrc}
             expanded={showLabels}
             showHelpCard={false}
@@ -246,7 +251,7 @@ const AdminLayout = () => {
           pageTitle={pageTitle}
           expanded={expanded}
           onToggleNav={toggleExpanded}
-          onBack={location.pathname === '/admin/map' ? () => navigate('/admin') : undefined}
+          onBack={location.pathname === mapPath ? () => navigate(basePath) : undefined}
           backLabel="Back to Dashboard"
           searchValue={search}
           onSearchChange={(e) => setSearch(e.target.value)}
@@ -276,9 +281,9 @@ const AdminLayout = () => {
           profileMenu={(
             <ProfileMenu
               name={displayName}
-              roleLabel={ROLE_LABEL}
+              roleLabel={roleLabel}
               avatarSrc={avatarSrc}
-              settingsPath="/admin/settings"
+              settingsPath={settingsPath}
               onLogout={handleLogout}
             />
           )}

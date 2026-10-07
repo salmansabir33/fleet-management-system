@@ -4,6 +4,9 @@ import api from '../../api'
 import { Modal, Input, Select, Button } from '../../shared/components'
 import { useTheme } from '../../theme'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
+import { useAuth } from '../../auth/AuthContext'
+import { readActingAdminId } from '../../auth/actingAdminStorage'
+import SuperAdminFleetSelect from './SuperAdminFleetSelect'
 import DriverVehicleSelect, { applyDriverVehicleAssignment } from './DriverVehicleSelect'
 
 // Formats raw digits into 12345-1234567-1 as the user types, matching
@@ -33,6 +36,9 @@ const apiError = (err, fallback) => {
 const AddDriverModal = ({ onClose, onCreated }) => {
   const { tokens } = useTheme()
   const { apiFor } = usePanelScope()
+  const { role } = useAuth()
+  const [targetAdminId, setTargetAdminId] = useState('')
+  const saGlobalCreate = role === 'super_admin' && readActingAdminId() == null
   const [name, setName] = useState('')
   const [idCardNumber, setIdCardNumber] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
@@ -48,6 +54,7 @@ const AddDriverModal = ({ onClose, onCreated }) => {
   const [error, setError] = useState(null)
 
   const canSave = name.trim().length > 0 && CNIC_COMPLETE.test(idCardNumber)
+    && (!saGlobalCreate || targetAdminId)
 
   const handleCreate = async () => {
     if (!canSave) return
@@ -64,6 +71,9 @@ const AddDriverModal = ({ onClose, onCreated }) => {
       if (dateJoined) data.append('date_joined', dateJoined)
       if (driverPic) data.append('driver_pic', driverPic)
       if (licensePic) data.append('license_pic', licensePic)
+      if (saGlobalCreate && targetAdminId) {
+        data.append('admin_id', String(targetAdminId))
+      }
 
       const res = await api.post(apiFor('/drivers', '/api/drivers'), data, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -109,6 +119,16 @@ const AddDriverModal = ({ onClose, onCreated }) => {
       <p style={{ margin: '0 0 14px', fontSize: 13, color: tokens.textSecondary }}>
         Name and CNIC are required.
       </p>
+
+      {saGlobalCreate && (
+        <div style={{ marginBottom: 14 }}>
+          <SuperAdminFleetSelect
+            required
+            value={targetAdminId}
+            onChange={(e) => setTargetAdminId(e.target.value)}
+          />
+        </div>
+      )}
 
       {error && (
         <div style={{

@@ -4,6 +4,7 @@ import {
   ArrowLeft, ShieldCheck, Pencil, Trash2, MoreHorizontal, MoreVertical, ChevronRight,
 } from 'lucide-react'
 import api from '../../api'
+import { useAuth } from '../../auth/AuthContext'
 import {
   LoadingState,
   EmptyState,
@@ -12,6 +13,9 @@ import {
   Dropdown,
   DropdownItem,
   ConfirmDialog,
+  Modal,
+  Select,
+  Button,
 } from '../../shared/components'
 import EditUserModal from '../components/EditUserModal'
 import { usePanelScope } from '../../manager/hooks/usePanelScope'
@@ -36,6 +40,8 @@ const buildDeleteUserMessage = (u) => {
 const UserDetail = () => {
   const { userId } = useParams()
   const navigate = useNavigate()
+  const { role } = useAuth()
+  const isSuperAdmin = role === 'super_admin'
   const { basePath, isManager, can, apiFor } = usePanelScope()
   const usersListPath = isManager ? `${basePath}/picker` : `${basePath}/users`
   const [user, setUser] = useState(null)
@@ -48,9 +54,33 @@ const UserDetail = () => {
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
+  const [admins, setAdmins] = useState([])
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [moveAdminId, setMoveAdminId] = useState('')
+  const [moving, setMoving] = useState(false)
+  const [moveError, setMoveError] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (
     typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false
   ))
+
+  useEffect(() => {
+    if (!isSuperAdmin) return undefined
+    let cancelled = false
+    const loadAdmins = async () => {
+      try {
+        const res = await api.get('/api/super-admin/admins')
+        if (!cancelled) {
+          const active = (res.data || []).filter((row) => row.is_active)
+          setAdmins(active)
+          if (active.length > 0) setMoveAdminId(String(active[0].id))
+        }
+      } catch {
+        // Move actions stay hidden if list fails.
+      }
+    }
+    loadAdmins()
+    return () => { cancelled = true }
+  }, [isSuperAdmin])
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ)
@@ -182,6 +212,26 @@ const UserDetail = () => {
     }
   }
 
+  const handleMoveUser = async (adminId) => {
+    setMoving(true)
+    setMoveError(null)
+    try {
+      await api.post(`/api/super-admin/users/${userId}/move`, {
+        admin_id: adminId == null ? null : Number(adminId),
+      })
+      setMoveOpen(false)
+      const nextUser = await loadUser()
+      await Promise.all([
+        resolveGroup(nextUser),
+        loadAssignedVehicles(nextUser),
+      ])
+    } catch (err) {
+      setMoveError(err.response?.data?.detail || 'Failed to move user')
+    } finally {
+      setMoving(false)
+    }
+  }
+
   const handleDeleteUser = async () => {
     if (!user) return
     setDeleting(true)
@@ -241,6 +291,31 @@ const UserDetail = () => {
         }}
       />
 
+      {moveOpen && (
+        <Modal open={moveOpen} title="Move to fleet admin" onClose={() => !moving && setMoveOpen(false)}>
+          {moveError && <p className="ft-login-error">{moveError}</p>}
+          <Select
+            label="Fleet admin"
+            value={moveAdminId}
+            onChange={(e) => setMoveAdminId(e.target.value)}
+          >
+            {admins.map((admin) => (
+              <option key={admin.id} value={admin.id}>
+                {admin.full_name || admin.username}
+              </option>
+            ))}
+          </Select>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+            <Button type="button" variant="secondary" onClick={() => setMoveOpen(false)} disabled={moving}>
+              Cancel
+            </Button>
+            <Button type="button" loading={moving} onClick={() => handleMoveUser(moveAdminId)}>
+              Move user
+            </Button>
+          </div>
+        </Modal>
+      )}
+
       {showEditModal && (
         <EditUserModal
           user={user}
@@ -270,7 +345,7 @@ const UserDetail = () => {
               <h2 className="ud-profile-name">{displayName}</h2>
               <p className="ud-profile-email">{user.username}</p>
             </div>
-            {can('user_management') && (
+            {(can('user_management') || isSuperAdmin) && (
               <div className="ud-profile-menu">
                 <Dropdown
                   align="right"
@@ -280,23 +355,37 @@ const UserDetail = () => {
                     </button>
                   )}
                 >
-                  <DropdownItem onClick={() => setShowEditModal(true)}>
-                    <Pencil size={14} />
-                    Edit
-                  </DropdownItem>
+                  {can('user_management') && (
+                    <DropdownItem onClick={() => setShowEditModal(true)}>
+                      <Pencil size={14} />
+                      Edit
+                    </DropdownItem>
+                  )}
                   {!isManager && !user.is_manager && (
                     <DropdownItem onClick={handleMakeManager} disabled={promoting}>
                       <ShieldCheck size={14} />
                       {promoting ? 'Promoting…' : 'Make Manager'}
                     </DropdownItem>
                   )}
-                  <DropdownItem danger onClick={() => {
-                    setDeleteError(null)
-                    setConfirmDelete(true)
-                  }}>
-                    <Trash2 size={14} />
-                    Delete
-                  </DropdownItem>
+                  {isSuperAdmin && (
+                    <>
+                      <DropdownItem onClick={() => { setMoveError(null); setMoveOpen(true) }}>
+                        Move to admin…
+                      </DropdownItem>
+                      <DropdownItem onClick={() => handleMoveUser(null)} disabled={moving}>
+                        Unassign from fleet
+                      </DropdownItem>
+                    </>
+                  )}
+                  {can('user_management') && (
+                    <DropdownItem danger onClick={() => {
+                      setDeleteError(null)
+                      setConfirmDelete(true)
+                    }}>
+                      <Trash2 size={14} />
+                      Delete
+                    </DropdownItem>
+                  )}
                 </Dropdown>
               </div>
             )}

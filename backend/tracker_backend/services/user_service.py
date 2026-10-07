@@ -21,6 +21,7 @@ def create_user_row(
     full_name: str | None = None,
     phone_number: str | None = None,
     manager_id: int | None = None,
+    admin_id: int | None = None,
     commit: bool = True,
 ) -> User:
     """Inserts a User after the username-uniqueness check. Optional
@@ -37,6 +38,7 @@ def create_user_row(
         full_name=full_name,
         phone_number=phone_number,
         manager_id=manager_id,
+        admin_id=admin_id,
         permissions=default_user_permissions(db),
         notification_prefs=default_bell_prefs(db, "user"),
     )

@@ -1,3 +1,27 @@
+.ft-acting-admin-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: var(--ft-radius-md);
+  background: color-mix(in srgb, var(--ft-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ft-primary) 28%, transparent);
+  font-size: 14px;
+}
+
+.ft-acting-admin-banner__exit {
+  border: none;
+  background: var(--ft-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--ft-radius-sm);
+  cursor: pointer;
+}
+
 /* Admin Settings control center — mockup card/switch layout */
 
 .ft-admin-settings-page .ft-admin-settings-tabs {

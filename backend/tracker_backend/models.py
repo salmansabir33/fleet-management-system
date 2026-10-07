@@ -7,6 +7,36 @@ from datetime import datetime, timezone
 from tracker_backend.db import Base
 
 
+class Admin(Base):
+    """Fleet owner (tenant). One admin = one fleet of users/devices/etc."""
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(60), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(120), nullable=True)
+    phone = Column(String(20), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+
+class SuperAdmin(Base):
+    """Platform owner. Exactly one row (enforced by singleton_key unique)."""
+    __tablename__ = "super_admins"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(60), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(120), nullable=True)
+    phone = Column(String(20), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    # Always 1 — unique constraint guarantees at most one row.
+    singleton_key = Column(Integer, nullable=False, default=1, unique=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+
 class Device(Base):
     __tablename__ = "devices"
 
@@ -32,6 +62,8 @@ class Device(Base):
     # fine. update_fleet_device in main.py checks this up front too,
     # to return a clean 400 instead of a raw IntegrityError.
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=True)
+    # Tenant: mirrors owning user's admin_id (NULL = unassigned/orphan).
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
     fuel_type_id = Column(Integer, ForeignKey("fuel_types.id"), nullable=True)
     fuel_avg_running = Column(Float, nullable=True)        # km per liter, used for fuel-cost estimates later
     fuel_avg_idle = Column(Float, nullable=True)           # liters per hour while idling
@@ -93,6 +125,9 @@ class User(Base):
     password_hash = Column(String(255), nullable=True)
     password_enc = Column(String(512), nullable=True)
 
+    # Tenant fleet owner. NULL = unassigned/orphan (Super Admin only list).
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
+
     created_at = Column(TIMESTAMP, server_default=func.now())
 
 
@@ -149,6 +184,7 @@ class Geofence(Base):
     center_lat = Column(Float, nullable=False)
     center_lon = Column(Float, nullable=False)
     radius_meters = Column(Float, nullable=False)
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
 
@@ -161,6 +197,7 @@ class Route(Base):
     waypoints = Column(JSON, nullable=False)
     path = Column(JSON, nullable=False)
     tolerance_meters = Column(Float, nullable=False, default=400, server_default="400")
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
 
 
@@ -284,6 +321,40 @@ class AlertTypeSetting(Base):
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
 
+class AdminPermissionOffering(Base):
+    """Per-fleet overlay: which PermissionDefinition keys this admin offers
+    to managers. Missing row = offered (default on). Turning off revokes
+    the key from managers in this fleet only.
+    """
+    __tablename__ = "admin_permission_offerings"
+    __table_args__ = (
+        UniqueConstraint("admin_id", "permission_key", name="uq_admin_permission_offering"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    admin_id = Column(Integer, ForeignKey("admins.id", ondelete="CASCADE"), nullable=False, index=True)
+    permission_key = Column(String(60), nullable=False)
+    is_offered = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+
+class AdminAlertOffering(Base):
+    """Per-fleet overlay: which alert types this admin offers in the
+    manager Notifications modal. Missing row = offered (default on).
+    Detection (AlertTypeSetting.is_enabled) stays global.
+    """
+    __tablename__ = "admin_alert_offerings"
+    __table_args__ = (
+        UniqueConstraint("admin_id", "alert_type", name="uq_admin_alert_offering"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    admin_id = Column(Integer, ForeignKey("admins.id", ondelete="CASCADE"), nullable=False, index=True)
+    alert_type = Column(String(60), nullable=False)
+    offered_to_managers = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+
 class FuelType(Base):
     __tablename__ = "fuel_types"
 
@@ -297,13 +368,26 @@ class FuelPrice(Base):
 
     id = Column(Integer, primary_key=True)
     fuel_type_id = Column(Integer, ForeignKey("fuel_types.id", ondelete="CASCADE"), nullable=False)
+    # NULL = global price (Super Admin); N = fleet override for admin N.
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
     price_per_liter = Column(Float, nullable=False)
     effective_date_start = Column(Date, nullable=False)
     effective_date_end = Column(Date, nullable=True)  # NULL = currently active, no newer price yet
     created_at = Column(TIMESTAMP, server_default=func.now())
+    # MySQL: IFNULL(admin_id,0) so two global rows cannot share a start date.
+    admin_id_key = Column(
+        Integer,
+        Computed("IFNULL(admin_id, 0)", persisted=True),
+        nullable=True,
+    )
 
     __table_args__ = (
-        UniqueConstraint("fuel_type_id", "effective_date_start", name="uq_fuel_price_type_date"),
+        UniqueConstraint(
+            "fuel_type_id",
+            "admin_id_key",
+            "effective_date_start",
+            name="uq_fuel_price_type_admin_date",
+        ),
     )
 
 
@@ -428,6 +512,8 @@ class Driver(Base):
     # served back at /uploads/<path> (see StaticFiles mount in main.py).
     license_pic_path = Column(String(255), nullable=True)
     driver_pic_path = Column(String(255), nullable=True)
+
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
 
     created_at = Column(TIMESTAMP, server_default=func.now())
 

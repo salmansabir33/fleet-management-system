@@ -1,6 +1,7 @@
 import { useContext, useMemo } from 'react'
 import { ManagerScopeContext } from '../context/ManagerScopeContext'
 import { managerPath } from '../utils/managerApi'
+import { useBasePath } from '../../shared/hooks/useBasePath'
 
 // Shared by admin pages that also render under /manager/:managerId.
 // Outside ManagerScopeProvider the context default has managerId=null,
@@ -10,9 +11,10 @@ export const usePanelScope = () => {
   const managerId = scope?.managerId ?? null
   const isManager = Boolean(managerId)
   const permissions = scope?.permissions || {}
+  const shellBasePath = useBasePath()
 
   return useMemo(() => {
-    const basePath = isManager ? `/manager/${managerId}` : '/admin'
+    const basePath = isManager ? `/manager/${managerId}` : shellBasePath
 
     const can = (permissionKey) => {
       if (!isManager) return true
@@ -34,5 +36,5 @@ export const usePanelScope = () => {
       can,
       apiFor,
     }
-  }, [isManager, managerId, permissions, scope?.managerName, scope?.loading])
+  }, [isManager, managerId, permissions, scope?.managerName, scope?.loading, shellBasePath])
 }

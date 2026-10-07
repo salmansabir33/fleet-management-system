@@ -12,6 +12,8 @@ import {
 } from '../../shared/components'
 import { MobilePageHeading } from '../../shared/shell'
 import { adminNavLabel } from '../navItems'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
+import AdminFilterBar from '../components/AdminFilterBar'
 import AddManagerModal from '../components/AddManagerModal'
 import PermissionsModal from '../components/PermissionsModal'
 import NotificationsModal from '../components/NotificationsModal'
@@ -29,6 +31,7 @@ const VEHICLE_TYPE_ICON = {
 }
 
 const Managers = () => {
+  const saListParams = useSaAdminListParams()
   const [managers, setManagers] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -46,14 +49,15 @@ const Managers = () => {
   const loadManagers = useCallback(async (q) => {
     setLoading(true)
     try {
-      const res = await api.get('/api/managers', { params: q ? { q } : {} })
+      const params = { ...saListParams, ...(q ? { q } : {}) }
+      const res = await api.get('/api/managers', { params })
       setManagers(res.data)
     } catch (err) {
       console.error('Failed to load managers:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [saListParams])
 
   const loadDetail = useCallback(async (id) => {
     if (id == null) { setDetail(null); return }
@@ -142,6 +146,8 @@ const Managers = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+
+          <AdminFilterBar inline className="amg-admin-filter" />
 
           <div className="at-trips-toolbar-actions amg-toolbar-actions">
             <button

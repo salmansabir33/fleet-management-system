@@ -4,6 +4,9 @@ import { Circle, MapContainer, Marker, TileLayer, Tooltip, useMap, useMapEvents 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '../../api'
+import { useAuth } from '../../auth/AuthContext'
+import { readActingAdminId } from '../../auth/actingAdminStorage'
+import SuperAdminFleetSelect from './SuperAdminFleetSelect'
 import { Modal, Input, Button, Tabs, Dropdown, DropdownItem } from '../../shared/components'
 import { useTheme } from '../../theme'
 
@@ -203,6 +206,9 @@ const GeofenceBuilderModal = ({ editGeofenceId, onClose, onSaved, apiFor: apiFor
   // When not passed (admin usage) fall back to the admin endpoints.
   const resolveUrl = apiForProp || ((_resource, fallback) => fallback)
   const isEdit = editGeofenceId != null
+  const { role } = useAuth()
+  const [targetAdminId, setTargetAdminId] = useState('')
+  const saGlobalCreate = role === 'super_admin' && readActingAdminId() == null
   const [mode, setMode] = useState('draw')
   const [mobilePane, setMobilePane] = useState('map')
   const [name, setName] = useState('')
@@ -305,6 +311,10 @@ const GeofenceBuilderModal = ({ editGeofenceId, onClose, onSaved, apiFor: apiFor
       setError('Radius must be a positive number of meters.')
       return
     }
+    if (saGlobalCreate && !isEdit && !targetAdminId) {
+      setError('Select a fleet admin for this geofence.')
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -314,6 +324,9 @@ const GeofenceBuilderModal = ({ editGeofenceId, onClose, onSaved, apiFor: apiFor
         center_lat: latNum,
         center_lon: lonNum,
         radius_meters: radiusNum,
+      }
+      if (saGlobalCreate && !isEdit && targetAdminId) {
+        payload.admin_id = Number(targetAdminId)
       }
       if (isEdit) {
         await api.patch(resolveUrl(`/geofences/${editGeofenceId}`, `/api/geofences/${editGeofenceId}`), payload)
@@ -357,6 +370,16 @@ const GeofenceBuilderModal = ({ editGeofenceId, onClose, onSaved, apiFor: apiFor
           required
         />
       </div>
+
+      {saGlobalCreate && !isEdit && (
+        <div style={{ marginBottom: 14 }}>
+          <SuperAdminFleetSelect
+            required
+            value={targetAdminId}
+            onChange={(e) => setTargetAdminId(e.target.value)}
+          />
+        </div>
+      )}
 
       <div className="geofence-builder-modes">
         {MODES.map((option) => (

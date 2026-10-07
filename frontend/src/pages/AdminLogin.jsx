@@ -15,6 +15,9 @@ const AdminLogin = () => {
   if (!loading && isAuthenticated && role === 'admin') {
     return <Navigate to="/admin/dashboard" replace />
   }
+  if (!loading && isAuthenticated && role === 'super_admin') {
+    return <Navigate to="/super-admin/dashboard" replace />
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault()

@@ -16,6 +16,8 @@ import {
   Table,
   TableRow,
 } from '../../shared/components'
+import AdminFilterBar from '../components/AdminFilterBar'
+import { useSaAdminListParams } from '../hooks/useSaAdminListParams'
 import { ALERT_TYPE_LABELS } from '../utils/notificationDisplayPrefs'
 
 const MOBILE_MQ = '(max-width: 820px)'
@@ -92,6 +94,8 @@ function ResolveControl({ alert, resolvingId, onResolve }) {
 const AdminAlertsFeed = () => {
   const { tokens } = useTheme()
   const isMobile = useIsMobile()
+  const saListParams = useSaAdminListParams()
+  const saAdminId = saListParams.admin_id ?? null
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showResolved, setShowResolved] = useState(false)
@@ -105,7 +109,11 @@ const AdminAlertsFeed = () => {
       if (isInitial) setLoading(true)
       try {
         const res = await api.get('/api/alerts', {
-          params: { limit: 200, resolved: showResolved },
+          params: {
+            limit: 200,
+            resolved: showResolved,
+            ...(saAdminId != null ? { admin_id: saAdminId } : {}),
+          },
         })
         if (!cancelled) setAlerts(res.data || [])
       } catch (err) {
@@ -124,7 +132,7 @@ const AdminAlertsFeed = () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [showResolved])
+  }, [showResolved, saAdminId])
 
   const resolveAlert = async (id) => {
     setResolvingId(id)
@@ -266,11 +274,14 @@ const AdminAlertsFeed = () => {
       className="ft-admin-alerts-feed-card"
       title="Fleet alerts"
       right={(
-        <Checkbox
-          label="Show resolved"
-          checked={showResolved}
-          onChange={(e) => setShowResolved(e.target.checked)}
-        />
+        <div className="ft-admin-alerts-feed-actions">
+          <AdminFilterBar inline className="ft-admin-alerts-admin-filter" />
+          <Checkbox
+            label="Show resolved"
+            checked={showResolved}
+            onChange={(e) => setShowResolved(e.target.checked)}
+          />
+        </div>
       )}
     >
       {renderAlerts()}
