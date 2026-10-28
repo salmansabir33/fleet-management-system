@@ -45,23 +45,6 @@ const routeForRole = (role, managerId) => {
   return '/user/dashboard'
 }
 
-/** Read JWT exp (ms). Does not verify signature — only used for refresh scheduling. */
-const getJwtExpiryMs = (token) => {
-  try {
-    const payloadPart = token.split('.')[1]
-    if (!payloadPart) return null
-    const json = atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/'))
-    const payload = JSON.parse(json)
-    return payload?.exp ? payload.exp * 1000 : null
-  } catch {
-    return null
-  }
-}
-
-/** Refresh 5 minutes before expiry; never sooner than 30s from now. */
-const REFRESH_BEFORE_MS = 5 * 60 * 1000
-const REFRESH_MIN_DELAY_MS = 30 * 1000
-
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -139,33 +122,9 @@ export const AuthProvider = ({ children }) => {
     return () => { cancelled = true }
   }, [refreshMe])
 
-  // Silently renew the access token shortly before JWT expiry so long-lived
-  // sessions are not hard-logged out when the token TTL ends.
-  useEffect(() => {
-    if (!session) return undefined
-    const token = readToken()
-    if (!token) return undefined
-    const expMs = getJwtExpiryMs(token)
-    if (!expMs) return undefined
-
-    const delay = Math.max(expMs - Date.now() - REFRESH_BEFORE_MS, REFRESH_MIN_DELAY_MS)
-    let cancelled = false
-    const timer = setTimeout(async () => {
-      try {
-        const res = await authApi.post('/api/auth/refresh')
-        if (cancelled) return
-        persistSession(res.data)
-        applySession(readAuthState())
-      } catch {
-        // Network/5xx: keep current token. Real 401 is handled by the interceptor.
-      }
-    }, delay)
-
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [session, applySession])
+  // No proactive /api/auth/refresh timer. Session persistence is localStorage
+  // + long-lived JWT (JWT_EXPIRE_MINUTES). A refresh scheduler previously
+  // hammered the API when multiple tabs re-armed after each renew.
 
   useEffect(() => {
     const onActingAdminChanged = () => clearAllScopedCaches()

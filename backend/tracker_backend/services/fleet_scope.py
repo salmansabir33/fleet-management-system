@@ -149,6 +149,11 @@ class FleetScope:
         if self.role not in ("admin", "super_admin"):
             raise HTTPException(status_code=403, detail="Admin access required")
 
+    def require_admin_or_manager(self) -> None:
+        """Admin/SA fleet tools, or a manager reading/updating their own row."""
+        if self.role not in ("admin", "super_admin", "manager"):
+            raise HTTPException(status_code=403, detail="Admin or manager access required")
+
     def require_super_admin(self) -> None:
         if not self.is_super_admin:
             raise HTTPException(status_code=403, detail="Super admin access required")
