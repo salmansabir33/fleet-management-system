@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from tracker_backend.models import Device, Driver, DriverAssignment, Trip
@@ -101,6 +102,33 @@ def count_assigned_driver_buckets(
             available.add(driver_id)
 
     return len(on_trip), len(available)
+
+
+def count_pending_trip_confirmations(
+    db: Session,
+    device_ids: list[int] | None = None,
+) -> tuple[int, int]:
+    """Ongoing trips still waiting on driver / route confirmation.
+
+    Returns (pending_drivers, pending_routes). Matches the Trips table
+    PENDING badges for in-progress trips.
+    """
+    if device_ids is not None and not device_ids:
+        return 0, 0
+
+    driver_q = db.query(func.count(Trip.id)).filter(
+        Trip.status == "in_progress",
+        Trip.confirmed_driver_id.is_(None),
+    )
+    route_q = db.query(func.count(Trip.id)).filter(
+        Trip.status == "in_progress",
+        Trip.confirmed_route_id.is_(None),
+    )
+    if device_ids is not None:
+        driver_q = driver_q.filter(Trip.device_id.in_(device_ids))
+        route_q = route_q.filter(Trip.device_id.in_(device_ids))
+
+    return (driver_q.scalar() or 0), (route_q.scalar() or 0)
 
 
 @dataclass

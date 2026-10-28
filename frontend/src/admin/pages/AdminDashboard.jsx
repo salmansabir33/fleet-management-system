@@ -5,11 +5,11 @@ import {
   AlertTriangle,
   Calendar,
   Car,
+  ClipboardList,
   Contact,
   Gauge,
   Navigation,
   Route,
-  Shield,
   Wallet,
   Wrench,
 } from 'lucide-react'
@@ -91,8 +91,6 @@ const AdminDashboard = () => {
   const [adminSummary, setAdminSummary] = useState(null)
   const [alertSummary, setAlertSummary] = useState(null)
   const [trendPoints, setTrendPoints] = useState([])
-  const [adminsCount, setAdminsCount] = useState(null)
-  const [adminsLoading, setAdminsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [alertsLoading, setAlertsLoading] = useState(true)
@@ -110,34 +108,6 @@ const AdminDashboard = () => {
     () => periodKpiLabels(dashboardPeriod),
     [dashboardPeriod],
   )
-
-  useEffect(() => {
-    if (!showSaAdminFilter) {
-      setAdminsCount(null)
-      setAdminsLoading(false)
-      return undefined
-    }
-
-    let active = true
-    setAdminsLoading(true)
-
-    const loadAdmins = async () => {
-      try {
-        const res = await api.get('/api/super-admin/admins')
-        if (!active) return
-        const rows = Array.isArray(res.data) ? res.data : []
-        setAdminsCount(rows.filter((row) => row.is_active).length)
-      } catch (err) {
-        console.error('Failed to load admins count:', err)
-        if (active) setAdminsCount(null)
-      } finally {
-        if (active) setAdminsLoading(false)
-      }
-    }
-
-    loadAdmins()
-    return () => { active = false }
-  }, [showSaAdminFilter])
 
   useEffect(() => {
     let active = true
@@ -311,6 +281,8 @@ const AdminDashboard = () => {
   const maintenanceDue = adminSummary?.vehicles_due_maintenance ?? 0
   const maintenanceOverdue = adminSummary?.vehicles_overdue_maintenance ?? 0
   const maintenanceYtd = adminSummary?.maintenance_records_ytd ?? null
+  const pendingDrivers = adminSummary?.trips_pending_driver_confirmation ?? null
+  const pendingRoutes = adminSummary?.trips_pending_route_confirmation ?? null
 
   const alertsTotal = alertSummary?.total ?? null
   const alertsCritical = alertSummary?.critical ?? 0
@@ -481,13 +453,26 @@ const AdminDashboard = () => {
         )}
         {showSaAdminFilter ? (
           <KpiStatCard
-            label="Admins"
-            value={adminsCount == null ? '—' : fmtNum(adminsCount)}
-            icon={Shield}
-            tone="brand"
-            loading={adminsLoading}
-            interactive
-            onClick={() => navigate(`${basePath}/admins`)}
+            label="Pending Drivers / Routes"
+            value={
+              pendingDrivers == null || pendingRoutes == null
+                ? '—'
+                : `${fmtNum(pendingDrivers)} / ${fmtNum(pendingRoutes)}`
+            }
+            icon={ClipboardList}
+            tone={
+              (pendingDrivers ?? 0) > 0 || (pendingRoutes ?? 0) > 0
+                ? 'warning'
+                : 'brand'
+            }
+            iconColor={
+              (pendingDrivers ?? 0) > 0 || (pendingRoutes ?? 0) > 0
+                ? 'orange'
+                : undefined
+            }
+            loading={summaryLoading}
+            interactive={canViewTrips}
+            onClick={canViewTrips ? () => navigate(tripsPath) : undefined}
           />
         ) : canReports ? (
           <KpiStatCard

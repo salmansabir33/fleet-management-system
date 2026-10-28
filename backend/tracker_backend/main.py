@@ -75,6 +75,7 @@ from tracker_backend.services.fuel_price_reflow import (
 from tracker_backend.services.dashboard_summary import (
     aggregate_trips_for_period,
     count_assigned_driver_buckets,
+    count_pending_trip_confirmations,
     period_window_utc,
 )
 from tracker_backend.services.dashboard_trends import (
@@ -2016,24 +2017,91 @@ def update_manager_permissions(manager_id: int, payload: ManagerPermissionsUpdat
     """Saves permission checkboxes for a manager. Keys not offered by
     this fleet cannot be granted — Settings is the option menu.
     """
-    scope.require_admin_like()
-    manager = scope.assert_manager(manager_id)
-    fleet_id = manager_fleet_admin_id(db, manager)
+    # #region agent log
+    def _dbg(hypothesis_id, location, message, data=None):
+        try:
+            import json, time
+            with open(r"c:\projects\traccar1\traccar1\debug-420bea.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({
+                    "sessionId": "420bea",
+                    "runId": "post-fix",
+                    "hypothesisId": hypothesis_id,
+                    "location": location,
+                    "message": message,
+                    "data": data or {},
+                    "timestamp": int(time.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+    # #endregion
+    try:
+        # #region agent log
+        _dbg("C", "main.py:update_manager_permissions:entry", "patch permissions entered", {
+            "manager_id": manager_id,
+            "scope_role": getattr(scope, "role", None),
+            "scope_admin_id": getattr(scope, "admin_id", None),
+            "sees_all": getattr(scope, "sees_all", None),
+            "payload_keys": sorted((payload.permissions or {}).keys()),
+            "payload_true": sorted(k for k, v in (payload.permissions or {}).items() if v),
+        })
+        # #endregion
+        scope.require_admin_like()
+        # Authorize on scope session, then reload on request session
+        # (main.get_db and deps.get_db used by get_scope are distinct).
+        scope.assert_manager(manager_id)
+        manager = db.query(Manager).filter(Manager.id == manager_id).first()
+        if manager is None:
+            raise HTTPException(status_code=404, detail="Manager not found")
+        fleet_id = manager_fleet_admin_id(db, manager)
 
-    allowed = active_permission_keys(db, fleet_id)
-    stored = dict(manager.permissions or {})
-    for key in list(stored):
-        if key not in allowed:
-            stored[key] = False
-    for key, enabled in (payload.permissions or {}).items():
-        if key in allowed:
-            stored[key] = bool(enabled)
-        else:
-            stored[key] = False
-    manager.permissions = stored
-    db.commit()
-    db.refresh(manager)
-    return _manager_out(db, manager)
+        allowed = active_permission_keys(db, fleet_id)
+        # #region agent log
+        _dbg("C", "main.py:update_manager_permissions:scope", "fleet and allowed keys", {
+            "manager_id": manager.id,
+            "manager_user_id": manager.user_id,
+            "fleet_id": fleet_id,
+            "allowed_count": len(allowed),
+            "allowed_sorted": sorted(allowed),
+            "existing_perm_keys": sorted((manager.permissions or {}).keys()),
+            "manager_in_request_session": manager in db,
+        })
+        # #endregion
+        stored = dict(manager.permissions or {})
+        for key in list(stored):
+            if key not in allowed:
+                stored[key] = False
+        for key, enabled in (payload.permissions or {}).items():
+            if key in allowed:
+                stored[key] = bool(enabled)
+            else:
+                stored[key] = False
+        manager.permissions = stored
+        db.commit()
+        db.refresh(manager)
+        # #region agent log
+        _dbg("D", "main.py:update_manager_permissions:committed", "db commit ok, building response", {
+            "stored_true": sorted(k for k, v in stored.items() if v),
+            "stored_count": len(stored),
+        })
+        # #endregion
+        out = _manager_out(db, manager)
+        # #region agent log
+        _dbg("D", "main.py:update_manager_permissions:success", "response built", {
+            "out_id": getattr(out, "id", None),
+            "out_perm_count": len(getattr(out, "permissions", None) or {}),
+        })
+        # #endregion
+        return out
+    except Exception as exc:
+        # #region agent log
+        _dbg("A", "main.py:update_manager_permissions:exception", "handler raised", {
+            "exc_type": type(exc).__name__,
+            "exc_str": str(exc)[:400],
+            "status_code": getattr(exc, "status_code", None),
+            "detail": str(getattr(exc, "detail", ""))[:300],
+        })
+        # #endregion
+        raise
 
 
 @app.get("/api/managers/{manager_id}/notification-prefs", response_model=NotificationPrefsOut)
@@ -2062,7 +2130,12 @@ def update_manager_notification_prefs(
     scope: FleetScope = Depends(get_scope),
 ):
     scope.require_admin_like()
-    manager = scope.assert_manager(manager_id)
+    # Authorize on scope session, then reload on request session
+    # (main.get_db and deps.get_db used by get_scope are distinct).
+    scope.assert_manager(manager_id)
+    manager = db.query(Manager).filter(Manager.id == manager_id).first()
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Manager not found")
     fleet_id = manager_fleet_admin_id(db, manager)
     ensure_alert_type_settings(db)
     offered = offered_alert_types(db, fleet_id)
@@ -3435,6 +3508,9 @@ def get_admin_dashboard_summary(
     drivers_on_trip, drivers_available = count_assigned_driver_buckets(
         db, device_ids=device_ids,
     )
+    pending_drivers, pending_routes = count_pending_trip_confirmations(
+        db, device_ids=device_ids,
+    )
 
     vehicles_due_maintenance, vehicles_overdue_maintenance = (
         maintenance_service.count_due_vehicles(db, device_ids=device_ids)
@@ -3519,6 +3595,8 @@ def get_admin_dashboard_summary(
             or 0
         ),
         users_unassigned=_scoped_user_query().filter(User.manager_id.is_(None)).count(),
+        trips_pending_driver_confirmation=pending_drivers,
+        trips_pending_route_confirmation=pending_routes,
     )
 
 

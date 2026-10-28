@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     DB_NAME: str
 
     JWT_SECRET: str
-    JWT_EXPIRE_MINUTES: int = 480
+    # 30 days — session survives tab/browser close until explicit logout
+    # (frontend stores the token in localStorage; refresh renews while open).
+    JWT_EXPIRE_MINUTES: int = 43200
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str
     PASSWORD_ENC_KEY: str

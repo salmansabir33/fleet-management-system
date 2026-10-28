@@ -33,6 +33,7 @@ from tracker_backend.manager_panel_trips import build_manager_trips
 from tracker_backend.services.dashboard_summary import (
     aggregate_trips_for_period,
     count_assigned_driver_buckets,
+    count_pending_trip_confirmations,
 )
 from tracker_backend.services.dashboard_trends import (
     TREND_PERIOD_DAYS,
@@ -308,6 +309,9 @@ def _scoped_dashboard_summary(
     drivers_on_trip, drivers_available = count_assigned_driver_buckets(
         db, device_ids=device_ids
     )
+    pending_drivers, pending_routes = count_pending_trip_confirmations(
+        db, device_ids=device_ids
+    )
 
     vehicles_due_maintenance, vehicles_overdue_maintenance = (
         maintenance_service.count_due_vehicles(db, device_ids=device_ids)
@@ -371,6 +375,8 @@ def _scoped_dashboard_summary(
         drivers_on_trip=drivers_on_trip,
         drivers_on_leave=drivers_on_leave,
         drivers_available=drivers_available,
+        trips_pending_driver_confirmation=pending_drivers,
+        trips_pending_route_confirmation=pending_routes,
     )
 
 

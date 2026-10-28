@@ -140,7 +140,7 @@ export const AuthProvider = ({ children }) => {
   }, [refreshMe])
 
   // Silently renew the access token shortly before JWT expiry so long-lived
-  // tabs are not hard-logged out at the 8-hour cutoff.
+  // sessions are not hard-logged out when the token TTL ends.
   useEffect(() => {
     if (!session) return undefined
     const token = readToken()

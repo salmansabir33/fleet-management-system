@@ -492,6 +492,9 @@ class AdminDashboardSummaryOut(BaseModel):
     managers_count: int = 0
     users_with_vehicles: int = 0
     users_unassigned: int = 0
+    # Ongoing trips with Trips-table PENDING confirmation badges
+    trips_pending_driver_confirmation: int = 0
+    trips_pending_route_confirmation: int = 0
 
 
 class DashboardTrendPointOut(BaseModel):

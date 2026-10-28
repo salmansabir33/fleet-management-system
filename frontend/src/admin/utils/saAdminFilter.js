@@ -1,9 +1,21 @@
 export const SA_ADMIN_FILTER_KEY = 'ft.saAdminFilter'
 export const SA_ADMIN_FILTER_EVENT = 'ft-sa-admin-filter-changed'
 
+try {
+  if (localStorage.getItem(SA_ADMIN_FILTER_KEY) == null) {
+    const fromSession = sessionStorage.getItem(SA_ADMIN_FILTER_KEY)
+    if (fromSession != null) {
+      localStorage.setItem(SA_ADMIN_FILTER_KEY, fromSession)
+      sessionStorage.removeItem(SA_ADMIN_FILTER_KEY)
+    }
+  }
+} catch {
+  // ignore
+}
+
 export function readSaAdminFilter() {
   try {
-    const raw = sessionStorage.getItem(SA_ADMIN_FILTER_KEY)
+    const raw = localStorage.getItem(SA_ADMIN_FILTER_KEY)
     if (raw == null || raw === '') return null
     const n = Number(raw)
     return Number.isFinite(n) ? n : null
@@ -15,10 +27,11 @@ export function readSaAdminFilter() {
 export function writeSaAdminFilter(adminId) {
   try {
     if (adminId == null || adminId === '') {
-      sessionStorage.removeItem(SA_ADMIN_FILTER_KEY)
+      localStorage.removeItem(SA_ADMIN_FILTER_KEY)
     } else {
-      sessionStorage.setItem(SA_ADMIN_FILTER_KEY, String(adminId))
+      localStorage.setItem(SA_ADMIN_FILTER_KEY, String(adminId))
     }
+    sessionStorage.removeItem(SA_ADMIN_FILTER_KEY)
   } catch {
     // ignore
   }
