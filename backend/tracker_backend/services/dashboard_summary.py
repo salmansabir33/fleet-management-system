@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from tracker_backend.models import Device, Driver, DriverAssignment, Trip
@@ -107,23 +107,34 @@ def count_assigned_driver_buckets(
 def count_pending_trip_confirmations(
     db: Session,
     device_ids: list[int] | None = None,
+    period: str | None = None,
 ) -> tuple[int, int]:
-    """Ongoing trips still waiting on driver / route confirmation.
+    """Trips still waiting on driver / route confirmation.
 
-    Returns (pending_drivers, pending_routes). Matches the Trips table
-    PENDING badges for in-progress trips.
+    Matches Trips-table PENDING badges: confirmed_*_id IS NULL, for both
+    completed and ongoing trips (confirmation is independent of status).
+
+    When `period` is set, only trips overlapping that PKT dashboard window
+    (same window as the Trips KPI total).
+
+    Returns (pending_driver_confirmations, pending_route_confirmations).
     """
     if device_ids is not None and not device_ids:
         return 0, 0
 
-    driver_q = db.query(func.count(Trip.id)).filter(
-        Trip.status == "in_progress",
-        Trip.confirmed_driver_id.is_(None),
-    )
-    route_q = db.query(func.count(Trip.id)).filter(
-        Trip.status == "in_progress",
-        Trip.confirmed_route_id.is_(None),
-    )
+    driver_q = db.query(func.count(Trip.id)).filter(Trip.confirmed_driver_id.is_(None))
+    route_q = db.query(func.count(Trip.id)).filter(Trip.confirmed_route_id.is_(None))
+
+    if period:
+        start_dt, end_dt = period_window(period)
+        if start_dt is not None and end_dt is not None:
+            overlap = (
+                Trip.start_time < end_dt,
+                or_(Trip.end_time.is_(None), Trip.end_time >= start_dt),
+            )
+            driver_q = driver_q.filter(*overlap)
+            route_q = route_q.filter(*overlap)
+
     if device_ids is not None:
         driver_q = driver_q.filter(Trip.device_id.in_(device_ids))
         route_q = route_q.filter(Trip.device_id.in_(device_ids))

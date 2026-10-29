@@ -57,12 +57,14 @@ function TrendBadge({ trend, tokens }) {
 /**
  * Dashboard KPI summary card — label on top, large value, optional trend / sparkline.
  * Pass `media` (e.g. a photo thumb) to replace the icon chip.
+ * Pass `detail` for a secondary breakdown under the value (e.g. pending chips).
  */
 export function KpiStatCard({
   icon: Icon,
   media,
   label,
   value,
+  detail,
   trend,
   tone = 'brand',
   iconColor,
@@ -93,6 +95,7 @@ export function KpiStatCard({
       className={[
         'ft-kpi-stat',
         compact ? 'ft-kpi-stat--sm' : '',
+        detail ? 'ft-kpi-stat--with-detail' : '',
         className,
       ].filter(Boolean).join(' ')}
       style={{ padding: compact ? '12px 12px' : '16px 18px', ...style }}
@@ -159,10 +162,17 @@ export function KpiStatCard({
               color: tokens.text,
               lineHeight: 1.15,
               letterSpacing: '-0.02em',
+              fontSize: detail ? (compact ? 20 : 22) : undefined,
             }}
           >
             {value}
           </div>
+
+          {detail ? (
+            <div className="ft-kpi-stat-detail" style={{ marginTop: 8 }}>
+              {detail}
+            </div>
+          ) : null}
 
           {progressPct != null && (
             <div className="ft-kpi-stat-progress" style={{ marginTop: tokens.spacing.md }}>

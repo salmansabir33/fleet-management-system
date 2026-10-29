@@ -310,7 +310,7 @@ def _scoped_dashboard_summary(
         db, device_ids=device_ids
     )
     pending_drivers, pending_routes = count_pending_trip_confirmations(
-        db, device_ids=device_ids
+        db, device_ids=device_ids, period=period,
     )
 
     vehicles_due_maintenance, vehicles_overdue_maintenance = (

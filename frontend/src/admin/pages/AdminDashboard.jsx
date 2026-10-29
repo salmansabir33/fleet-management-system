@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Calendar,
   Car,
-  ClipboardList,
   Contact,
   Gauge,
   Navigation,
@@ -451,15 +450,11 @@ const AdminDashboard = () => {
             }
           />
         )}
-        {showSaAdminFilter ? (
+        {canReports && (
           <KpiStatCard
-            label="Pending Drivers / Routes"
-            value={
-              pendingDrivers == null || pendingRoutes == null
-                ? '—'
-                : `${fmtNum(pendingDrivers)} / ${fmtNum(pendingRoutes)}`
-            }
-            icon={ClipboardList}
+            label={kpiLabels.trips}
+            value={tripsToday == null ? '—' : fmtNum(tripsToday)}
+            icon={Route}
             tone={
               (pendingDrivers ?? 0) > 0 || (pendingRoutes ?? 0) > 0
                 ? 'warning'
@@ -473,18 +468,35 @@ const AdminDashboard = () => {
             loading={summaryLoading}
             interactive={canViewTrips}
             onClick={canViewTrips ? () => navigate(tripsPath) : undefined}
+            detail={
+              pendingDrivers != null && pendingRoutes != null ? (
+                <div className="ft-admin-trips-pending">
+                  <p className="ft-admin-trips-pending__hint">Pending confirmation</p>
+                  <div className="ft-admin-trips-pending__chips">
+                    <span
+                      className={[
+                        'ft-admin-trips-pending__chip',
+                        pendingDrivers > 0 ? 'is-pending' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      <span className="ft-admin-trips-pending__label">Drivers</span>
+                      <strong>{fmtNum(pendingDrivers)}</strong>
+                    </span>
+                    <span
+                      className={[
+                        'ft-admin-trips-pending__chip',
+                        pendingRoutes > 0 ? 'is-pending' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      <span className="ft-admin-trips-pending__label">Routes</span>
+                      <strong>{fmtNum(pendingRoutes)}</strong>
+                    </span>
+                  </div>
+                </div>
+              ) : null
+            }
           />
-        ) : canReports ? (
-          <KpiStatCard
-            label={kpiLabels.trips}
-            value={tripsToday == null ? '—' : fmtNum(tripsToday)}
-            icon={Route}
-            tone="brand"
-            loading={summaryLoading}
-            interactive={canViewTrips}
-            onClick={canViewTrips ? () => navigate(tripsPath) : undefined}
-          />
-        ) : null}
+        )}
       </div>
 
       {showDesktopMap ? (
